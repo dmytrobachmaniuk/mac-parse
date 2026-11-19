@@ -1,0 +1,28 @@
+[project]
+name = "mac-parser"
+version = "0.1.0"
+description = "OLX parser + Gemini analysis + Telegram bot for used MacBook Air M1/M2"
+readme = "README.md"
+authors = [
+    { name = "Dmytro Bachmaniuk", email = "d.bachmaniuk@llcise.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.32.0",
+    "google-genai>=3.6.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.4",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+mac-parser = "mac_parser.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
