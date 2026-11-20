@@ -51,6 +51,12 @@ class Settings:
     # Скільки фото оголошення віддавати в Gemini.
     photos_for_ai: int = field(default_factory=lambda: _int("PHOTOS_FOR_AI", 10))
 
+    # Кому слати пуші в режимі GitHub Actions (числові chat id через кому). Зберігається в секретах,
+    # бо база в гілці data публічна.
+    telegram_chat_ids: set[int] = field(default_factory=lambda: _ids("TELEGRAM_CHAT_IDS"))
+    # Адреса сайту-каталогу на GitHub Pages (для кнопок у Telegram).
+    site_url: str = field(default_factory=lambda: os.getenv("SITE_URL", "").strip().rstrip("/"))
+
     scan_interval_min: int = field(default_factory=lambda: _int("SCAN_INTERVAL_MIN", 30))
     # Нижче цієї ціни (грн) це майже напевно аксесуар, запчастини або скам.
     min_price_uah: int = field(default_factory=lambda: _int("MIN_PRICE_UAH", 12000))

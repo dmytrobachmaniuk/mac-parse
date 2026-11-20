@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Mac Hunter</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg-l: #f4f5f7; --bg-d: #0f1115;
+  --card-l: #ffffff; --card-d: #1a1d23;
+  --text-l: #16181d; --text-d: #e8eaee;
+  --muted-l: #5d6470; --muted-d: #9aa2ae;
+  --line-l: #e3e6eb; --line-d: #2a2f38;
+  --accent-l: #2457d6; --accent-d: #7aa2ff;
+  --good-l: #12804a; --good-d: #4cd389;
+  --mid-l: #a26100; --mid-d: #f2b84b;
+  --bad-l: #b42318; --bad-d: #ff7a6e;
+  --bg: var(--bg-l); --card: var(--card-l); --text: var(--text-l); --muted: var(--muted-l);
+  --line: var(--line-l); --accent: var(--accent-l); --good: var(--good-l); --mid: var(--mid-l); --bad: var(--bad-l);
+  @media (prefers-color-scheme: dark) {
+    --bg: var(--bg-d); --card: var(--card-d); --text: var(--text-d); --muted: var(--muted-d);
+    --line: var(--line-d); --accent: var(--accent-d); --good: var(--good-d); --mid: var(--mid-d); --bad: var(--bad-d);
+  }
+  @supports (color: light-dark(white, black)) {
+    --bg: light-dark(var(--bg-l), var(--bg-d)); --card: light-dark(var(--card-l), var(--card-d));
+    --text: light-dark(var(--text-l), var(--text-d)); --muted: light-dark(var(--muted-l), var(--muted-d));
+    --line: light-dark(var(--line-l), var(--line-d)); --accent: light-dark(var(--accent-l), var(--accent-d));
+    --good: light-dark(var(--good-l), var(--good-d)); --mid: light-dark(var(--mid-l), var(--mid-d));
+    --bad: light-dark(var(--bad-l), var(--bad-d));
+  }
+  accent-color: var(--accent);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 12px 16px 0; }
+h1 { font-size: 18px; margin: 0 0 2px; }
+.meta { color: var(--muted); font-size: 13px; }
+.note { margin-top: 6px; font-size: 13px; color: var(--mid); }
+.tabs { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; gap: 6px; padding: 8px 16px; flex-wrap: wrap; align-items: center; }
+.tabs button, .tabs select { font: inherit; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; touch-action: manipulation; }
+.tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--card); font-weight: 600; }
+.tabs select { margin-left: auto; }
+main { max-width: 760px; margin: 0 auto; padding: 12px 16px 48px; display: grid; gap: 14px; }
+.empty { color: var(--muted); text-align: center; padding: 40px 0; }
+article { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.gallery { position: relative; background: #000; }
+.track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: manipulation; }
+.track::-webkit-scrollbar { display: none; }
+.track img { flex: 0 0 100%; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; scroll-snap-align: center; background: #000; }
+@media (prefers-reduced-motion: no-preference) { .track { scroll-behavior: smooth; } }
+.nav { position: absolute; top: 50%; translate: 0 -50%; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgb(0 0 0 / .55); color: #fff; font-size: 20px; cursor: pointer; touch-action: manipulation; }
+.nav.prev { left: 8px; } .nav.next { right: 8px; }
+.nav:focus-visible, .tabs button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.counter { position: absolute; right: 10px; bottom: 10px; background: rgb(0 0 0 / .6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.body { padding: 12px 14px 14px; }
+.top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.score { font-weight: 700; padding: 2px 9px; border-radius: 999px; color: var(--card); }
+.score.good { background: var(--good); } .score.mid { background: var(--mid); } .score.bad { background: var(--bad); }
+.score.none { background: transparent; color: var(--muted); border: 1px dashed var(--line); font-weight: 500; }
+.verdict { color: var(--muted); font-size: 13px; }
+h2 { font-size: 17px; margin: 6px 0 2px; }
+.price { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.delta { font-size: 13px; font-weight: 600; } .delta.down { color: var(--good); } .delta.up { color: var(--bad); }
+.small { color: var(--muted); font-size: 13px; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 4px; }
+ul { margin: 0; padding-left: 18px; } li { margin: 2px 0; }
+.summary { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); }
+details { margin-top: 10px; } summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.actions { margin-top: 14px; }
+.actions a { display: inline-block; padding: 9px 14px; border-radius: 10px; background: var(--accent); color: var(--card); text-decoration: none; font-weight: 600; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍏 Mac Hunter: MacBook Air M1/M2 на OLX</h1>
+  <div class="meta" id="meta">Завантаження…</div>
+  <div class="note" id="note" hidden></div>
+
+</header>
+<nav class="tabs" aria-label="Розділи">
+    <button type="button" data-tab="best">🏆 Найкраще</button>
+    <button type="button" data-tab="M1">M1</button>
+    <button type="button" data-tab="M2">M2</button>
+    <label class="visually-hidden" for="sort">Сортування</label>
+    <select id="sort">
+      <option value="value">🏆 ціна/якість</option>
+      <option value="price">💰 дешевші</option>
+      <option value="new">🆕 нові</option>
+    </select>
+  </nav>
+<main id="list" aria-live="polite"></main>
+
+<script type="module">
+const $ = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k);  // рядки йдуть як текст, не HTML
+  return el;
+};
+const uah = v => v ? v.toLocaleString("uk-UA").replace(/ /g, " ") + " грн" : "—";
+const storage = gb => !gb ? "?" : gb >= 1024 ? `${gb / 1024} ТБ` : `${gb} ГБ`;
+const date = iso => {
+  const d = new Date(iso); if (isNaN(d)) return "?";
+  const days = Math.floor((Date.now() - d) / 864e5);
+  return `${d.toLocaleDateString("uk-UA")} (${days <= 0 ? "сьогодні" : days === 1 ? "вчора" : days + " дн. тому"})`;
+};
+const bullets = (title, items, n = 6) => items?.length ? [$("h3", {}, title), $("ul", {}, items.slice(0, n).map(i => $("li", {}, i)))] : [];
+
+let data, tab = "best", sort = "value";
+const params = new URLSearchParams(location.search);
+if (["best", "M1", "M2"].includes(params.get("tab"))) tab = params.get("tab");
+
+function gallery(l) {
+  if (!l.photos.length) return null;
+  const track = $("div", { class: "track", tabindex: "0", role: "group", "aria-label": "Фото" },
+    l.photos.map((src, i) => $("img", { src, alt: `Фото ${i + 1} з ${l.photos.length}`, loading: "lazy", decoding: "async" })));
+  const counter = $("div", { class: "counter", role: "status" }, `1 / ${l.photos.length}`);
+  const current = () => Math.round(track.scrollLeft / track.clientWidth);
+  const go = step => {
+    const n = l.photos.length, next = (current() + step + n) % n;
+    track.scrollTo({ left: next * track.clientWidth });
+  };
+  let raf = 0;
+  track.addEventListener("scroll", () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { counter.textContent = `${current() + 1} / ${l.photos.length}`; });
+  }, { passive: true });
+  const kids = [track, counter];
+  if (l.photos.length > 1) kids.unshift(
+    $("button", { type: "button", class: "nav prev", "aria-label": "Попереднє фото", onclick: () => go(-1) }, "‹"),
+    $("button", { type: "button", class: "nav next", "aria-label": "Наступне фото", onclick: () => go(1) }, "›"));
+  return $("div", { class: "gallery" }, kids);
+}
+
+function card(l) {
+  const ai = l.ai;
+  const s = ai?.deal_score;
+  const badge = s ? $("span", { class: `score ${s >= 8 ? "good" : s >= 5 ? "mid" : "bad"}` }, `${s}/10`) : $("span", { class: "score none" }, "без оцінки AI");
+  const delta = l.delta != null ? $("span", { class: `delta ${l.delta < 0 ? "down" : "up"}` },
+    ` ${l.delta < 0 ? "−" : "+"}${Math.abs(Math.round(l.delta))}% від медіани ${uah(l.median)}`) : null;
+  let battery = `${l.battery_pct ? l.battery_pct + "%" : "?"} · циклів: ${l.battery_cycles ?? "?"}`;
+  if ((l.battery_pct || l.battery_cycles) && l.battery_source === "фото") battery += " (✅ видно на фото)";
+  else if ((l.battery_pct || l.battery_cycles) && l.battery_source === "опис") battery += " (зі слів продавця)";
+  const specs = [
+    `Чіп: Apple ${l.chip ?? "?"}`, `Оперативна пам'ять: ${l.ram ? l.ram + " ГБ" : "?"}`,
+    `Накопичувач: ${storage(l.ssd)}`, `Екран: ${l.screen}`, l.color && `Колір: ${l.color}`,
+    `Батарея: ${battery}`, ai?.condition_score && `Стан: ${ai.condition_score}/10`, ai?.kit?.length && `Комплект: ${ai.kit.join(", ")}`,
+  ].filter(Boolean);
+  const more = ai ? [
+    ...bullets("📸 Видно на фото", ai.photo_facts), ...bullets("Дефекти на фото", ai.visual_defects),
+    ...bullets("✅ Плюси", ai.pros), ...bullets("❓ Спитати продавця", ai.questions_to_seller, 3),
+  ] : [];
+  return $("article", { id: l.key },
+    gallery(l),
+    $("div", { class: "body" },
+      $("div", { class: "top" }, badge, ai?.price_verdict && $("span", { class: "verdict" }, ai.price_verdict)),
+      $("h2", {}, `MacBook Air ${l.chip ?? "?"} · ${l.ram ?? "?"}/${storage(l.ssd)} · ${l.screen}`),
+      $("div", { class: "price" }, uah(l.price), l.negotiable && $("span", { class: "small" }, " · торг")),
+      $("div", {}, delta, l.similar ? $("span", { class: "small" }, ` (схожих: ${l.similar})`) : null),
+      l.first_price && $("div", { class: "small" }, `📉 початкова ціна ${uah(l.first_price)}`),
+      ai?.summary && $("div", { class: "summary" }, "🤖 ", ai.summary),
+      ...bullets("⚠️ Ризики", ai?.red_flags, 4),
+      $("h3", {}, "Характеристики"), $("ul", {}, specs.map(x => $("li", {}, x))),
+      $("h3", {}, "Оголошення"),
+      $("ul", {},
+        $("li", {}, `Продавець: ${l.business ? "магазин / перекуп" : "приватна особа"}${l.seller ? ` «${l.seller}»` : ""}`),
+        $("li", {}, `Місто: ${l.city || "?"}`),
+        $("li", {}, `Створено: ${date(l.created)}`), $("li", {}, `Оновлено: ${date(l.refreshed)}`)),
+      more.length ? $("details", {}, $("summary", {}, "Детальніше від AI"), more) : null,
+      !ai && $("p", { class: "small" }, l.title),
+      $("div", { class: "actions" }, $("a", { href: l.url, target: "_blank", rel: "noopener" }, "🔗 Відкрити на OLX")),
+    ));
+}
+
+function render() {
+  for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
+  let items = data.listings.filter(l => tab === "best" ? (l.ai?.deal_score ?? 0) >= data.best_min_score : l.chip === tab);
+  const value = l => [-(l.ai?.deal_score ?? 0), l.delta ?? 999, l.price ?? 0];
+  const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  if (sort === "value") items.sort((a, b) => cmp(value(a), value(b)));
+  else if (sort === "price") items.sort((a, b) => (a.price ?? 1e9) - (b.price ?? 1e9));
+  else items.sort((a, b) => (b.created ?? "").localeCompare(a.created ?? ""));
+  const list = document.getElementById("list");
+  list.replaceChildren(...(items.length ? items.map(card) : [$("p", { class: "empty" },
+    tab === "best" ? `Поки жодне оголошення не отримало від AI ${data.best_min_score}+ із 10. Перевірено ${data.analyzed} із ${data.total}.` : "Порожньо.")]));
+  const p = new URLSearchParams(location.search); p.set("tab", tab); history.replaceState(null, "", "?" + p);
+}
+
+for (const b of document.querySelectorAll("[data-tab]")) b.addEventListener("click", () => { tab = b.dataset.tab; render(); scrollTo(0, 0); });
+document.getElementById("sort").addEventListener("change", e => { sort = e.target.value; render(); });
+
+data = await (await fetch("data.json", { cache: "no-store" })).json();
+const best = data.listings.filter(l => (l.ai?.deal_score ?? 0) >= data.best_min_score).length;
+for (const b of document.querySelectorAll("[data-tab]")) {
+  const n = b.dataset.tab === "best" ? best : data.listings.filter(l => l.chip === b.dataset.tab).length;
+  b.textContent += ` · ${n}`;
+}
+document.getElementById("meta").textContent =
+  `Оновлено ${new Date(data.updated).toLocaleString("uk-UA")} · перевірено AI ${data.analyzed} із ${data.total} · оголошення не старші ${data.max_age_days} дн.`;
+if (data.ai_note) { const n = document.getElementById("note"); n.textContent = "⏸ " + data.ai_note; n.hidden = false; }
+render();
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
+</script>
+</body>
+</html>

@@ -65,6 +65,10 @@ def main() -> None:
     sub.add_parser("bot", help="запустити Telegram-бота")
     p_scan = sub.add_parser("scan", help="один прохід без бота")
     p_scan.add_argument("--analyze", type=int, default=None, help="скільки оголошень віддати в AI (0 — без AI)")
+    p_cycle = sub.add_parser("cycle", help="один прохід для GitHub Actions: скан, AI, пуші, сайт")
+    p_cycle.add_argument("--out", default="site", help="куди зібрати сайт")
+    p_site = sub.add_parser("site", help="лише зібрати сайт з БД")
+    p_site.add_argument("--out", default="site")
     p_show = sub.add_parser("show", help="показати картки з БД")
     p_show.add_argument("section", nargs="?", default="TOP", choices=["M1", "M2", "TOP"])
     p_show.add_argument("--sort", default="score", choices=["score", "price", "new"])
@@ -74,6 +78,19 @@ def main() -> None:
     _setup_logging()
     if args.cmd == "scan":
         asyncio.run(_scan(args.analyze))
+    elif args.cmd == "cycle":
+        from pathlib import Path
+
+        from .cloud import run_cycle
+
+        asyncio.run(run_cycle(Path(args.out)))
+    elif args.cmd == "site":
+        from pathlib import Path
+
+        from . import site
+        from .db import DB
+
+        print(site.build(DB(settings.db_path), Path(args.out)), "оголошень")
     elif args.cmd == "show":
         _show(args.section, args.sort, args.n)
     else:

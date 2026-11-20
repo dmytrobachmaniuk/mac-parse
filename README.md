@@ -22,6 +22,26 @@ Gemini переглядає фото й опис кожного оголошен
    три види сортування (оцінка / ціна / нові) і кнопка «Переаналізувати».
    Пуш приходить, коли нове оголошення отримало оцінку ≥ `NOTIFY_MIN_SCORE`.
 
+## Хмарний режим (GitHub Actions + Pages, безкоштовно)
+
+Workflow `.github/workflows/scan.yml` кожні 30 хв: скан OLX → Gemini → пуші в Telegram про нові
+оголошення з оцінкою ≥ `NOTIFY_MIN_SCORE` → сайт-каталог на GitHub Pages
+(`https://<owner>.github.io/<repo>/`). База зберігається між запусками в гілці `data`.
+
+Постійного бота в цьому режимі нема: Telegram — для пушів, перегляд — на сайті.
+На повідомлення бот відповідає під час найближчого запуску (до ~30 хв).
+
+Налаштування репозиторію (один раз):
+1. Settings → General → Danger Zone → **Change visibility → Public**
+   (Pages і безлімітні хвилини Actions безкоштовні лише для публічних репозиторіїв).
+2. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
+3. Settings → Secrets and variables → Actions → New repository secret:
+   `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `ALLOWED_USER_IDS`, `TELEGRAM_CHAT_IDS` (ваш chat id).
+4. Actions → scan → **Run workflow** для першого запуску.
+
+GitHub вимикає розклад, якщо в репозиторії 60 днів не було комітів у main — тоді просто
+увімкніть workflow знову на вкладці Actions.
+
 ## Ключі
 
 **Telegram-бот (2 хв)**

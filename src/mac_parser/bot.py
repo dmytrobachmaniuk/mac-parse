@@ -120,10 +120,13 @@ def card_kb(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> 
 
 def notify_kb(row: sqlite3.Row) -> InlineKeyboardMarkup:
     b = InlineKeyboardButton
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [b(text="🔗 Відкрити оригінал на OLX", url=row["url"])],
-        [b(text="⬅ Меню", callback_data="menu")],
-    ])
+    rows = [[b(text="🔗 Відкрити оригінал на OLX", url=row["url"])]]
+    if settings.site_url:
+        # Режим GitHub Actions: постійного бота нема, тож «меню» — це сайт-каталог.
+        rows.append([b(text="🏆 Весь каталог з оцінками AI", url=f"{settings.site_url}/?tab=best")])
+    else:
+        rows.append([b(text="⬅ Меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 MENU_TEXT = (
