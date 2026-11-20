@@ -44,7 +44,7 @@ async def _scan(analyze_limit: int | None) -> None:
 
 
 def _show(section: str, sort: str, limit: int) -> None:
-    from .cards import caption
+    from .cards import card_text
     from .db import DB
     from .pricing import market_for_row
 
@@ -52,7 +52,7 @@ def _show(section: str, sort: str, limit: int) -> None:
     rows = db.visible(None if section == "TOP" else section, sort)
     print(f"{section}: {len(rows)} оголошень\n")
     for row in rows[:limit]:
-        text = re.sub(r"<[^>]+>", "", caption(row, market_for_row(db, row)))
+        text = re.sub(r"<[^>]+>", "", card_text(row, market_for_row(db, row)))
         print(text, "\n", row["url"], "\n", "-" * 60, sep="")
 
 

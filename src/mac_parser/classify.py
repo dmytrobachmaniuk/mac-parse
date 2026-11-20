@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from .models import Listing, Specs
 
@@ -135,7 +136,21 @@ def extract_memory(title: str, description: str) -> tuple[int | None, int | None
     return ram, ssd
 
 
-def classify(listing: Listing, min_price_uah: int, max_price_uah: int, uah_price: int | None) -> Specs:
+def age_days(iso: str) -> int | None:
+    """Скільки повних днів минуло від дати OLX (ISO з часовою зоною)."""
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(iso)).days
+    except (TypeError, ValueError):
+        return None
+
+
+def classify(
+    listing: Listing,
+    min_price_uah: int,
+    max_price_uah: int,
+    uah_price: int | None,
+    max_age_days: int | None = None,
+) -> Specs:
     full_title = _norm(listing.title)
     title, desc = _strip_negated_tail(full_title), _norm(listing.description)
     specs = Specs()
@@ -161,6 +176,10 @@ def classify(listing: Listing, min_price_uah: int, max_price_uah: int, uah_price
     specs.chip = chip
     if specs.reject_reason is None and chip_reject:
         specs.reject_reason = chip_reject
+    if specs.reject_reason is None and max_age_days is not None:
+        days = age_days(listing.created_at)
+        if days is not None and days > max_age_days:
+            specs.reject_reason = f"висить > {max_age_days} дн."
 
     specs.ram_gb, specs.ssd_gb = extract_memory(listing.title, listing.description)
     full = f"{title}\n{desc}"

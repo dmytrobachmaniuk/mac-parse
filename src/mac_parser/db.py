@@ -71,6 +71,9 @@ class DB:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(listings)")}
+        if "photo_file_ids" not in cols:  # міграція: кеш Telegram file_id для всього альбому
+            self.conn.execute("ALTER TABLE listings ADD COLUMN photo_file_ids TEXT")
         self.conn.commit()
 
     # ---- listings -------------------------------------------------------
@@ -122,13 +125,15 @@ class DB:
     def get(self, key: str) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM listings WHERE key=?", (key,)).fetchone()
 
-    def needs_analysis(self, limit: int) -> list[sqlite3.Row]:
+    def needs_analysis(self, limit: int, prompt_version: int = 0) -> list[sqlite3.Row]:
+        """Нові, зі зміненою ціною або проаналізовані старою версією промпту. Спершу без аналізу взагалі."""
         return self.conn.execute(
             """SELECT * FROM listings
                WHERE active=1 AND reject_reason IS NULL
-                 AND (analysis IS NULL OR analyzed_price IS NOT price_uah)
-               ORDER BY first_seen DESC LIMIT ?""",
-            (limit,),
+                 AND (analysis IS NULL OR analyzed_price IS NOT price_uah
+                      OR COALESCE(json_extract(analysis,'$.prompt_version'), 1) < ?)
+               ORDER BY analysis IS NOT NULL, first_seen DESC LIMIT ?""",
+            (prompt_version, limit),
         ).fetchall()
 
     def save_analysis(self, key: str, analysis: dict, price_uah: int | None) -> None:
@@ -183,8 +188,8 @@ class DB:
         self.conn.execute("UPDATE listings SET notified=1")
         self.conn.commit()
 
-    def set_photo_file_id(self, key: str, file_id: str) -> None:
-        self.conn.execute("UPDATE listings SET photo_file_id=? WHERE key=?", (file_id, key))
+    def set_photo_file_ids(self, key: str, file_ids: list[str]) -> None:
+        self.conn.execute("UPDATE listings SET photo_file_ids=? WHERE key=?", (json.dumps(file_ids), key))
         self.conn.commit()
 
     def stats(self) -> dict[str, Any]:
@@ -194,6 +199,9 @@ class DB:
             "active": q("SELECT COUNT(*) FROM listings WHERE active=1").fetchone()[0],
             "passed": q("SELECT COUNT(*) FROM listings WHERE active=1 AND reject_reason IS NULL").fetchone()[0],
             "analyzed": q("SELECT COUNT(*) FROM listings WHERE active=1 AND analysis IS NOT NULL").fetchone()[0],
+            "analyzed_passed": q(
+                "SELECT COUNT(*) FROM listings WHERE active=1 AND reject_reason IS NULL AND analysis IS NOT NULL"
+            ).fetchone()[0],
             "rejected": q(
                 "SELECT reject_reason, COUNT(*) c FROM listings WHERE active=1 AND reject_reason IS NOT NULL "
                 "GROUP BY reject_reason ORDER BY c DESC"

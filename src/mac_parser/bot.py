@@ -1,4 +1,8 @@
-"""Telegram-бот: розділи M1 / M2 / Топ, картка = фото + звіт + висновок AI + посилання."""
+"""Telegram-бот: розділи «Найкраще ціна/якість», M1, M2.
+
+Картка = альбом з усіма фото оголошення + під ним текст (характеристики списком,
+ціна відносно медіани, висновок AI) з кнопками гортання й посиланням на OLX.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ import logging
 import sqlite3
 import statistics
 from collections import defaultdict
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
@@ -26,8 +31,8 @@ from aiogram.types import (
     TelegramObject,
 )
 
-from .analyzer import QuotaExceeded
-from .cards import caption, fmt_storage, fmt_uah
+from .analyzer import QuotaExceeded, is_fresh
+from .cards import card_text, fmt_storage, fmt_uah
 from .config import settings
 from .db import DB, now
 from .pricing import effective_specs, market_for_row
@@ -36,13 +41,27 @@ from .scanner import Scanner, ScanReport
 log = logging.getLogger(__name__)
 router = Router()
 
-SECTIONS = {"M1": "💻 MacBook Air M1", "M2": "💻 MacBook Air M2", "TOP": "🔥 Топ угоди M1 + M2"}
-SORTS = {"score": "⭐ за оцінкою AI", "price": "💰 за ціною", "new": "🆕 спершу нові"}
+SECTIONS = {"M1": "💻 MacBook Air M1", "M2": "💻 MacBook Air M2", "TOP": "🏆 Найкраще ціна/якість"}
+SORTS = {"score": "🏆 ціна/якість", "price": "💰 дешевші", "new": "🆕 нові"}
 SORT_CYCLE = {"score": "price", "price": "new", "new": "score"}
+MAX_ALBUM = 10  # ліміт Telegram на медіагрупу
 
 # Заповнюються в run().
 db: DB
 scanner: Scanner
+# (chat_id, id текстового повідомлення картки) → id повідомлень альбому над ним.
+albums: dict[tuple[int, int], list[int]] = {}
+# Ключі оголошень, які зараз аналізуються у фоні (щоб не запускати двічі).
+_analyzing: dict[str, asyncio.Task] = {}
+
+
+async def ack(cb: CallbackQuery, text: str | None = None, show_alert: bool = False) -> None:
+    """Відповідь на натискання кнопки. Натискання, зроблені поки бот був вимкнений,
+    Telegram уже не приймає («query is too old») — це не привід зупиняти обробку."""
+    try:
+        await cb.answer(text, show_alert=show_alert)
+    except TelegramBadRequest:
+        pass
 
 
 class AccessMiddleware(BaseMiddleware):
@@ -62,19 +81,20 @@ class AccessMiddleware(BaseMiddleware):
             if isinstance(event, Message):
                 await event.answer(f"Бот приватний. Ваш id: <code>{user.id if user else '?'}</code>")
             elif isinstance(event, CallbackQuery):
-                await event.answer("Бот приватний", show_alert=True)
+                await ack(event, "Бот приватний", show_alert=True)
             return None
         return await handler(event, data)
 
 
 # ---------------------------------------------------------------- клавіатури
 def menu_kb(chat_id: int) -> InlineKeyboardMarkup:
-    m1, m2 = len(db.visible("M1", "score")), len(db.visible("M2", "score"))
+    m1, m2 = len(db.visible("M1", "new")), len(db.visible("M2", "new"))
+    best = len(rows_for("TOP", "score"))
     notify = "🔔 Сповіщення: увімк." if db.get_notify(chat_id) else "🔕 Сповіщення: вимк."
     b = InlineKeyboardButton
     return InlineKeyboardMarkup(inline_keyboard=[
-        [b(text=f"💻 M1 · {m1}", callback_data="v:M1:score:0"), b(text=f"💻 M2 · {m2}", callback_data="v:M2:score:0")],
-        [b(text="🔥 Топ угоди", callback_data="v:TOP:score:0")],
+        [b(text=f"🏆 Найкраще ціна/якість · {best}", callback_data="v:TOP:score:0")],
+        [b(text=f"💻 Усі M1 · {m1}", callback_data="v:M1:score:0"), b(text=f"💻 Усі M2 · {m2}", callback_data="v:M2:score:0")],
         [b(text="📊 Ринок", callback_data="stats"), b(text="🔄 Оновити зараз", callback_data="scan")],
         [b(text=notify, callback_data="notif")],
     ])
@@ -90,9 +110,7 @@ def card_kb(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> 
             b(text="▶", callback_data=f"v:{section}:{sort}:{next_i}"),
         ],
         [b(text="🔗 Відкрити оригінал на OLX", url=row["url"])],
-        [
-            b(text=f"Сорт: {SORTS[sort]}", callback_data=f"v:{section}:{SORT_CYCLE[sort]}:0"),
-        ],
+        [b(text=f"Сорт: {SORTS[sort]}", callback_data=f"v:{section}:{SORT_CYCLE[sort]}:0")],
         [
             b(text="🔁 Переаналізувати", callback_data=f"re:{row['ext_id']}:{section}:{sort}:{idx}"),
             b(text="⬅ Меню", callback_data="menu"),
@@ -110,39 +128,119 @@ def notify_kb(row: sqlite3.Row) -> InlineKeyboardMarkup:
 
 MENU_TEXT = (
     "<b>Мисливець на MacBook Air M1/M2</b>\n"
-    "Парсю OLX кожні {interval} хв, Gemini дивиться фото й опис і ставить оцінку угоді.\n\n"
+    "Парсю OLX кожні {interval} хв, показую лише оголошення, створені за останні {age} дн.\n"
+    "Gemini дивиться всі фото й опис і ставить оцінку угоді.\n\n"
     "Оберіть розділ:"
 )
 
 
-# ---------------------------------------------------------------- фото
-async def photo_input(row: sqlite3.Row) -> str | BufferedInputFile | None:
-    if row["photo_file_id"]:
-        return row["photo_file_id"]
-    photos = json.loads(row["photos"])
-    if not photos:
-        return None
-    try:
-        r = await scanner.http.get(photos[0])
-        if r.status_code == 200:
-            return BufferedInputFile(r.content, filename=f"{row['ext_id']}.jpg")
-    except Exception:  # noqa: BLE001
-        log.warning("Фото %s не завантажилось", row["key"])
+def menu_text() -> str:
+    text = MENU_TEXT.format(interval=settings.scan_interval_min, age=settings.max_age_days)
+    s = db.stats()
+    status = ai_status()
+    line = f"🤖 Перевірено AI: {s['analyzed_passed']} із {s['passed']}"
+    if status:
+        line += f"\n⏸ {status}. Бот працює й далі, просто без нових оцінок."
+    return text.replace("\n\nОберіть розділ:", f"\n\n{line}\n\nОберіть розділ:")
+
+
+# ---------------------------------------------------------------- AI
+def ai_status() -> str | None:
+    """None, якщо Gemini зараз доступний; інакше — пояснення для картки."""
+    if scanner.analyzer is None:
+        return "AI вимкнено: у .env немає GEMINI_API_KEY"
+    if not scanner.analyzer.available_models():
+        until = min(scanner.analyzer.exhausted.values())
+        return f"Ліміт AI на сьогодні вичерпано, оцінка з'явиться після ~{datetime.fromtimestamp(until):%H:%M}"
     return None
 
 
-def _remember_file_id(row: sqlite3.Row, msg: Message | bool | None) -> None:
-    if isinstance(msg, Message) and msg.photo and not row["photo_file_id"]:
-        db.set_photo_file_id(row["key"], msg.photo[-1].file_id)
+def start_analysis(row: sqlite3.Row, force: bool = False) -> asyncio.Task | None:
+    """Запускає AI-аналіз у фоні (або повертає вже запущений). Нічого не чекає."""
+    if ai_status() or (is_fresh(row) and not force):
+        return None
+    task = _analyzing.get(row["key"])
+    if task is None:
+        task = asyncio.create_task(_analyze(row))
+        _analyzing[row["key"]] = task
+    return task
 
 
-async def send_card(bot: Bot, chat_id: int, row: sqlite3.Row, text: str, kb: InlineKeyboardMarkup) -> None:
-    photo = await photo_input(row)
-    if photo is None:
-        await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
-        return
-    msg = await bot.send_photo(chat_id, photo, caption=text, reply_markup=kb)
-    _remember_file_id(row, msg)
+async def _analyze(row: sqlite3.Row) -> bool:
+    try:
+        result = await scanner.analyzer.analyze(row, market_for_row(db, row))
+        db.save_analysis(row["key"], result, row["price_uah"])
+        return True
+    except QuotaExceeded:
+        return False
+    except Exception:  # noqa: BLE001 — картка живе й без AI
+        log.exception("AI для %s не вдався", row["key"])
+        return False
+    finally:
+        _analyzing.pop(row["key"], None)
+
+
+def prefetch(rows: list[sqlite3.Row], idx: int) -> None:
+    """Аналізуємо наступну картку заздалегідь, щоб при гортанні оцінка вже була."""
+    if len(rows) > 1:
+        start_analysis(rows[(idx + 1) % len(rows)])
+
+
+# ---------------------------------------------------------------- відправка картки
+async def _download(url: str, name: str) -> BufferedInputFile | None:
+    try:
+        r = await scanner.http.get(url)
+        if r.status_code == 200 and r.content:
+            return BufferedInputFile(r.content, filename=name)
+    except Exception:  # noqa: BLE001
+        log.warning("Фото не завантажилось: %s", url)
+    return None
+
+
+async def _album_media(row: sqlite3.Row, use_cache: bool = True) -> list[InputMediaPhoto]:
+    cached = json.loads(row["photo_file_ids"] or "null") if use_cache else None
+    if cached:
+        return [InputMediaPhoto(media=fid) for fid in cached[:MAX_ALBUM]]
+    urls = json.loads(row["photos"])[:MAX_ALBUM]
+    files = await asyncio.gather(*(_download(u, f"{row['ext_id']}_{i}.jpg") for i, u in enumerate(urls)))
+    return [InputMediaPhoto(media=f) for f in files if f is not None]
+
+
+async def _send_album(bot: Bot, chat_id: int, row: sqlite3.Row) -> list[Message]:
+    for use_cache in (True, False):
+        media = await _album_media(row, use_cache)
+        if not media:
+            return []
+        try:
+            if len(media) == 1:
+                msgs = [await bot.send_photo(chat_id, media[0].media)]
+            else:
+                msgs = await bot.send_media_group(chat_id, media)
+        except TelegramBadRequest as e:
+            if use_cache:  # file_id протух — завантажимо фото заново
+                log.warning("Кеш фото %s не спрацював: %s", row["key"], e)
+                continue
+            raise
+        if not use_cache or not row["photo_file_ids"]:
+            db.set_photo_file_ids(row["key"], [m.photo[-1].file_id for m in msgs if m.photo])
+        return msgs
+    return []
+
+
+async def send_listing(bot: Bot, chat_id: int, row: sqlite3.Row, text: str, kb: InlineKeyboardMarkup) -> Message:
+    album = await _send_album(bot, chat_id, row)
+    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+    if album:
+        albums[(chat_id, msg.message_id)] = [m.message_id for m in album]
+    return msg
+
+
+async def clear_card(bot: Bot, message: Message) -> None:
+    ids = albums.pop((message.chat.id, message.message_id), []) + [message.message_id]
+    try:
+        await bot.delete_messages(message.chat.id, ids)
+    except TelegramBadRequest:
+        pass
 
 
 # ---------------------------------------------------------------- хендлери
@@ -150,7 +248,7 @@ async def send_card(bot: Bot, chat_id: int, row: sqlite3.Row, text: str, kb: Inl
 @router.message(Command("menu"))
 async def cmd_start(message: Message) -> None:
     db.add_subscriber(message.chat.id)
-    await message.answer(MENU_TEXT.format(interval=settings.scan_interval_min), reply_markup=menu_kb(message.chat.id))
+    await message.answer(menu_text(), reply_markup=menu_kb(message.chat.id))
 
 
 @router.message(Command("m1", "m2", "top"))
@@ -171,44 +269,43 @@ async def cmd_stats(message: Message) -> None:
 
 @router.callback_query(F.data == "noop")
 async def cb_noop(cb: CallbackQuery) -> None:
-    await cb.answer()
+    await ack(cb)
 
 
 @router.callback_query(F.data == "menu")
 async def cb_menu(cb: CallbackQuery) -> None:
-    await cb.answer()
-    text = MENU_TEXT.format(interval=settings.scan_interval_min)
-    if cb.message.photo:
-        await cb.message.delete()
-        await cb.message.answer(text, reply_markup=menu_kb(cb.message.chat.id))
+    await ack(cb)
+    if (cb.message.chat.id, cb.message.message_id) in albums or cb.message.photo:
+        await clear_card(cb.bot, cb.message)
+        await cb.message.answer(menu_text(), reply_markup=menu_kb(cb.message.chat.id))
     else:
-        await cb.message.edit_text(text, reply_markup=menu_kb(cb.message.chat.id))
+        await cb.message.edit_text(menu_text(), reply_markup=menu_kb(cb.message.chat.id))
 
 
 @router.callback_query(F.data == "notif")
 async def cb_notif(cb: CallbackQuery) -> None:
     chat_id = cb.message.chat.id
     db.set_notify(chat_id, not db.get_notify(chat_id))
-    await cb.answer("Збережено")
+    await ack(cb, "Збережено")
     await cb.message.edit_reply_markup(reply_markup=menu_kb(chat_id))
 
 
 @router.callback_query(F.data == "stats")
 async def cb_stats(cb: CallbackQuery) -> None:
-    await cb.answer()
+    await ack(cb)
     await cb.message.answer(stats_text())
 
 
 @router.callback_query(F.data == "scan")
 async def cb_scan(cb: CallbackQuery) -> None:
-    await cb.answer()
+    await ack(cb)
     await start_scan(cb.bot, cb.message.chat.id)
 
 
 @router.callback_query(F.data.startswith("v:"))
 async def cb_view(cb: CallbackQuery) -> None:
     _, section, sort, idx = cb.data.split(":")
-    await cb.answer()
+    await ack(cb)
     await show_card(cb.bot, cb.message.chat.id, cb.message, section, sort, int(idx))
 
 
@@ -216,67 +313,119 @@ async def cb_view(cb: CallbackQuery) -> None:
 async def cb_reanalyze(cb: CallbackQuery) -> None:
     _, ext_id, section, sort, idx = cb.data.split(":")
     row = db.get(f"olx:{ext_id}")
-    if row is None or scanner.analyzer is None:
-        await cb.answer("AI не налаштовано" if scanner.analyzer is None else "Оголошення не знайдено", show_alert=True)
+    if row is None:
+        await ack(cb, "Оголошення вже зникло з OLX", show_alert=True)
         return
-    await cb.answer("Аналізую, ~10 с…")
-    try:
-        result = await scanner.analyzer.analyze(row, market_for_row(db, row))
-    except QuotaExceeded:
-        await cb.message.answer("Ліміт Gemini вичерпано, спробуйте пізніше.")
+    status = ai_status()
+    if status:
+        await ack(cb, status, show_alert=True)
         return
-    except Exception as e:  # noqa: BLE001
-        log.exception("reanalyze")
-        await cb.message.answer(f"Не вдалося: {e.__class__.__name__}")
-        return
-    db.save_analysis(row["key"], result, row["price_uah"])
-    # Порядок у списку міг змінитись — показуємо саме це оголошення.
-    rows = rows_for(section, sort)
-    pos = next((i for i, r in enumerate(rows) if r["key"] == row["key"]), int(idx))
-    await show_card(cb.bot, cb.message.chat.id, cb.message, section, sort, pos)
+    await ack(cb, "Gemini аналізує заново, картка оновиться сама")
+    task = start_analysis(row, force=True)
+    await _refresh_card(cb.bot, cb.message, row["key"], section, sort, int(idx), task)
 
 
 # ---------------------------------------------------------------- логіка
+def _value_key(row: sqlite3.Row) -> tuple:
+    """Ціна/якість: вища оцінка Gemini → більша знижка від медіани → дешевше. Без оцінки — в кінець."""
+    delta = market_for_row(db, row).delta_pct(row["price_uah"])
+    return (-(row["ai_score"] or 0), delta if delta is not None else 999, row["price_uah"] or 0)
+
+
 def rows_for(section: str, sort: str) -> list[sqlite3.Row]:
-    return db.visible(None if section == "TOP" else section, sort)
+    rows = db.visible(None if section == "TOP" else section, sort)
+    if section == "TOP":
+        # Лише перевірені Gemini і з високою оцінкою. Аналіз старою версією промпту теж рахуємо —
+        # він оновиться у фоні, а розділ не має порожніти після кожної зміни промпту.
+        rows = [r for r in rows if (r["ai_score"] or 0) >= settings.best_min_score]
+    if sort == "score":
+        rows.sort(key=_value_key)
+    return rows
+
+
+# chat_id → id текстового повідомлення картки, яка зараз на екрані.
+_current: dict[int, int] = {}
+
+
+def _card(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> tuple[str, InlineKeyboardMarkup]:
+    header = None
+    if not is_fresh(row):
+        status = ai_status()
+        if status:
+            header = f"⏸ <i>{status}. Показую дані з оголошення.</i>"
+        elif row["key"] in _analyzing:
+            header = "⏳ <i>Gemini аналізує фото й опис, картка оновиться сама (~20–60 с)</i>"
+    return card_text(row, market_for_row(db, row), header=header or ""), card_kb(row, section, sort, idx, total)
+
+
+async def _refresh_card(bot: Bot, message: Message, key: str, section: str, sort: str, idx: int,
+                        task: asyncio.Task | None) -> None:
+    """Показує статус на картці, чекає на AI у фоні й перемальовує текст, якщо картка ще на екрані."""
+    total = max(len(rows_for(section, sort)), idx + 1)
+    row = db.get(key)
+    if row is None:
+        return
+    text, kb = _card(row, section, sort, idx, total)
+    try:
+        await message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+    except TelegramBadRequest:
+        pass
+    if task is None:
+        return
+
+    async def wait_and_redraw() -> None:
+        await task
+        if _current.get(message.chat.id) != message.message_id:
+            return  # користувач уже перегорнув далі
+        fresh = db.get(key)
+        if fresh is None:
+            return
+        new_text, new_kb = _card(fresh, section, sort, idx, total)
+        if not is_fresh(fresh) and not ai_status():
+            new_text = new_text.replace("⏳", "⚠️", 1).replace(
+                "Gemini аналізує фото й опис, картка оновиться сама (~20–60 с)",
+                "AI не вдалося проаналізувати, натисніть «🔁 Переаналізувати»")
+        try:
+            await bot.edit_message_text(new_text, chat_id=message.chat.id, message_id=message.message_id,
+                                        reply_markup=new_kb, disable_web_page_preview=True)
+        except TelegramBadRequest:
+            pass
+
+    asyncio.create_task(wait_and_redraw())
 
 
 async def show_card(bot: Bot, chat_id: int, message: Message | None, section: str, sort: str, idx: int) -> None:
     rows = rows_for(section, sort)
     if not rows:
-        text = f"{SECTIONS[section]}\n\nПоки порожньо. Натисніть «🔄 Оновити зараз»."
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="menu")]])
-        if message and not message.photo:
-            await message.edit_text(text, reply_markup=kb)
+        if section == "TOP":
+            s = db.stats()
+            status = ai_status()
+            text = (
+                f"{SECTIONS[section]}\n\nПоки жодне оголошення не отримало від Gemini {settings.best_min_score}+ із 10.\n"
+                f"Перевірено {s['analyzed_passed']} із {s['passed']}."
+                + (f"\n{status}." if status else " Решта аналізується у фоні — загляньте за кілька хвилин.")
+                + "\n\nУсі оголошення доступні в розділах M1 і M2."
+            )
         else:
-            await bot.send_message(chat_id, text, reply_markup=kb)
+            text = f"{SECTIONS[section]}\n\nПоки порожньо. Натисніть «🔄 Оновити зараз»."
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ Меню", callback_data="menu")]])
+        if message:
+            await clear_card(bot, message)
+        await bot.send_message(chat_id, text, reply_markup=kb)
         return
 
     idx %= len(rows)
     row = rows[idx]
-    text = caption(row, market_for_row(db, row))
-    kb = card_kb(row, section, sort, idx, len(rows))
-    photo = await photo_input(row)
-
-    if message and message.photo and photo is not None:
-        try:
-            edited = await message.edit_media(InputMediaPhoto(media=photo, caption=text, parse_mode=ParseMode.HTML), reply_markup=kb)
-            _remember_file_id(row, edited)
-            return
-        except TelegramBadRequest as e:
-            if "not modified" in str(e):
-                return
-            log.warning("edit_media не вдався: %s", e)
+    # AI ніколи не блокує показ: картка йде одразу, аналіз (якщо треба) — у фоні.
+    task = start_analysis(row)
+    text, kb = _card(row, section, sort, idx, len(rows))
     if message:
-        try:
-            await message.delete()
-        except TelegramBadRequest:
-            pass
-    if photo is None:
-        await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
-    else:
-        msg = await bot.send_photo(chat_id, photo, caption=text, reply_markup=kb)
-        _remember_file_id(row, msg)
+        await clear_card(bot, message)
+    msg = await send_listing(bot, chat_id, row, text, kb)
+    _current[chat_id] = msg.message_id
+    if task is not None:
+        await _refresh_card(bot, msg, row["key"], section, sort, idx, task)
+    prefetch(rows, idx)
 
 
 def stats_text() -> str:
@@ -285,18 +434,20 @@ def stats_text() -> str:
         chip, ram, ssd, screen = effective_specs(row)
         if row["price_uah"] and ram and ssd:
             groups[(chip, screen, ram, ssd)].append(row["price_uah"])
-    lines = ["<b>📊 Ринок OLX зараз (медіана · мін · кількість)</b>"]
-    for (chip, screen, ram, ssd), prices in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2], kv[0][3])):
+    lines = [
+        "<b>📊 Ринок OLX зараз</b>",
+        f"Медіанна ціна за конфігурацією (оголошення за останні {settings.max_age_days} дн.)",
+        "",
+    ]
+    for (chip, screen, ram, ssd), prices in sorted(groups.items()):
         if len(prices) < 2:
             continue
         lines.append(
-            f"{chip} {screen}\" {ram}/{fmt_storage(ssd)}: <b>{fmt_uah(round(statistics.median(prices)))}</b>"
-            f" · від {fmt_uah(min(prices))} · {len(prices)} шт."
+            f"• {chip} {screen}\" · {ram} ГБ / {fmt_storage(ssd)}: <b>{fmt_uah(round(statistics.median(prices)))}</b>"
+            f" ({len(prices)} шт.)"
         )
     s = db.stats()
-    lines.append(
-        f"\nУ базі активних: {s['active']}, пройшли фільтр: {s['passed']}, з AI-оцінкою: {s['analyzed']}"
-    )
+    lines.append(f"\nПоказую: {s['passed']}, з AI-оцінкою: {s['analyzed_passed']}")
     if s["rejected"]:
         lines.append("Відсіяно: " + ", ".join(f"{r[0]} — {r[1]}" for r in s["rejected"][:6]))
     last = db.meta_get("last_scan")
@@ -311,10 +462,10 @@ async def notify(bot: Bot) -> None:
         return
     subs = db.subscribers()
     for row in rows:
-        text = caption(row, market_for_row(db, row), position="🚨 <b>нова пропозиція</b>")
+        text = card_text(row, market_for_row(db, row), header="🚨 <b>Нова вигідна пропозиція</b>")
         for chat_id in subs:
             try:
-                await send_card(bot, chat_id, row, text, notify_kb(row))
+                await send_listing(bot, chat_id, row, text, notify_kb(row))
             except Exception:  # noqa: BLE001
                 log.exception("Сповіщення %s → %s", row["key"], chat_id)
         await asyncio.sleep(0.5)
@@ -372,7 +523,7 @@ async def run() -> None:
         BotCommand(command="start", description="Меню"),
         BotCommand(command="m1", description="MacBook Air M1"),
         BotCommand(command="m2", description="MacBook Air M2"),
-        BotCommand(command="top", description="Топ угоди"),
+        BotCommand(command="top", description="Найкраще ціна/якість"),
         BotCommand(command="stats", description="Ринкові ціни"),
         BotCommand(command="scan", description="Оновити зараз"),
     ])

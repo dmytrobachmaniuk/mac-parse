@@ -48,6 +48,16 @@ uv sync
 uv run mac-parser bot
 ```
 
+### У фоні (переживає закриття терміналу)
+
+```powershell
+.\scripts\start-bot.ps1   # запуск; повторний запуск перезапускає
+.\scripts\stop-bot.ps1    # зупинка
+Get-Content data\bot.log -Tail 30 -Wait   # лог
+```
+
+Бот працює, поки увімкнений комп'ютер; після перезавантаження Windows запустіть `start-bot.ps1` знову.
+
 Корисне без Telegram:
 
 ```bash

@@ -5,7 +5,7 @@ import re
 from types import SimpleNamespace
 
 from mac_parser import analyzer as analyzer_mod
-from mac_parser.cards import CAPTION_LIMIT, caption
+from mac_parser.cards import TEXT_LIMIT, card_text
 from mac_parser.classify import classify
 from mac_parser.db import DB
 from mac_parser.pricing import market_for_row
@@ -13,6 +13,7 @@ from tests.test_classify import make
 
 AI = analyzer_mod.Analysis(
     is_relevant=True, chip="M1", ram_gb=8, ssd_gb=256, screen_inch=13.3, color="Space Gray",
+    photo_facts=["Звіт про систему: Cycle Count 180, Maximum Capacity 91%"], battery_source="фото",
     battery_health_pct=91, battery_cycles=180, condition_score=8,
     visual_defects=["дрібна подряпина на кришці " * 3] * 4, kit=["коробка", "оригінальна зарядка"],
     red_flags=["фото частково стокові " * 3] * 4, pros=["приватний продавець"] * 3,
@@ -53,6 +54,7 @@ def test_pipeline(tmp_path):
     an.client = SimpleNamespace(aio=SimpleNamespace(models=FakeModels()))
     an.http = FakeHttp()
     an.limiter = analyzer_mod._RateLimiter(6000)
+    an.exhausted = {}
     result = asyncio.run(an.analyze(row, market))
     assert result["deal_score"] == 9 and result["market_median"] == 25000
     contents = FakeModels.kwargs["contents"]
@@ -61,12 +63,13 @@ def test_pipeline(tmp_path):
 
     db.save_analysis(row["key"], result, row["price_uah"])
     assert [r["key"] for r in db.visible("M1", "score")][0] == "olx:0"
-    assert db.needs_analysis(10)[0]["key"] != "olx:0"
+    assert "olx:0" not in [r["key"] for r in db.needs_analysis(10, analyzer_mod.PROMPT_VERSION)]
+    assert "olx:0" in [r["key"] for r in db.needs_analysis(10, analyzer_mod.PROMPT_VERSION + 1)]
     assert db.visible("M2", "score") == []
 
-    text = caption(db.get("olx:0"), market)
-    assert len(text) <= CAPTION_LIMIT
-    assert "9/10" in text and "−20% від медіани 25 000 грн" in text and "🤖" in text
+    text = card_text(db.get("olx:0"), market)
+    assert len(text) <= TEXT_LIMIT
+    assert "9/10" in text and "без оцінки AI" not in text and "−20% від медіани 25 000 грн" in text and "• Оперативна пам'ять: 8 ГБ" in text and "• Створено: " in text and "🤖" in text and "видно на фото" in text and "Cycle Count 180" in text
     # Теги збалансовані після обрізання.
     for tag in ("b", "i"):
         assert len(re.findall(f"<{tag}>", text)) == len(re.findall(f"</{tag}>", text))
@@ -76,8 +79,45 @@ def test_pipeline(tmp_path):
     item.ext_id = "0"
     assert db.upsert(item, classify(item, 12000, 80000, 18000), 18000) == "price_changed"
     assert "olx:0" in [r["key"] for r in db.needs_analysis(10)]
-    assert "була 20 000 грн" in caption(db.get("olx:0"), market)
+    assert "початкова ціна 20 000 грн" in card_text(db.get("olx:0"), market)
 
     # Зникле з OLX оголошення ховається.
     assert db.deactivate_missing("olx", {"olx:0", "olx:1"}) == 3
     assert len(db.visible("M1", "price")) == 2
+
+
+def test_model_rotation_on_quota(tmp_path):
+    """429 на першій моделі → аналіз іде на наступну, перша більше не пробується."""
+    from google.genai import errors as genai_errors
+
+    calls: list[str] = []
+
+    class QuotaModels:
+        async def generate_content(self, model, **kwargs):
+            calls.append(model)
+            if model == "m-a":
+                raise genai_errors.ClientError(429, {"error": {"code": 429, "message": "Please retry in 1h2m3.5s.", "status": "RESOURCE_EXHAUSTED"}})
+            return SimpleNamespace(parsed=AI, text=AI.model_dump_json())
+
+    db = DB(tmp_path / "t.sqlite3")
+    fill(db)
+    row = db.get("olx:0")
+    an = object.__new__(analyzer_mod.Analyzer)
+    an.client = SimpleNamespace(aio=SimpleNamespace(models=QuotaModels()))
+    an.http = FakeHttp()
+    an.limiter = analyzer_mod._RateLimiter(6000)
+    an.exhausted = {}
+    object.__setattr__(analyzer_mod.settings, "gemini_models", ["m-a", "m-b"])
+
+    r1 = asyncio.run(an.analyze(row, market_for_row(db, row)))
+    r2 = asyncio.run(an.analyze(row, market_for_row(db, row)))
+    assert (r1["model"], r2["model"]) == ("m-b", "m-b")
+    assert calls == ["m-a", "m-b", "m-b"]
+    assert 3700 < an.exhausted["m-a"] - __import__("time").time() <= 3724
+
+    an.exhausted["m-b"] = an.exhausted["m-a"]
+    try:
+        asyncio.run(an.analyze(row, market_for_row(db, row)))
+        raise AssertionError("мало кинути QuotaExceeded")
+    except analyzer_mod.QuotaExceeded:
+        pass

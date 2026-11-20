@@ -11,7 +11,7 @@ def make(title: str, desc: str = "", price: int = 25000) -> Listing:
     return Listing(
         source="olx", ext_id="1", url="u", title=title, description=desc, price=price, currency="UAH",
         negotiable=False, photos=[], city="Київ", region="", is_business=False, seller_name="",
-        created_at="2026-11-19T10:00:00+02:00", refreshed_at="", params={},
+        created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), refreshed_at="", params={},
     )
 
 
@@ -69,6 +69,18 @@ def test_price_bounds_and_screen():
     assert classify(make("MacBook Air M1 8/256"), 12000, 80000, 5500).reject_reason == "підозріло дешево"
     specs = classify(make("MacBook Air 15 2023 (M2 / 16 Gb / 512 SSD)"), 12000, 80000, 45000)
     assert (specs.chip, specs.screen, specs.reject_reason) == ("M2", "15", None)
+
+
+def test_age_filter_uses_creation_date():
+    from datetime import datetime, timedelta, timezone
+
+    old = make("MacBook Air M1 8/256")
+    old.created_at = (datetime.now(timezone.utc) - timedelta(days=173)).isoformat()
+    old.refreshed_at = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()  # оновлене, але старе
+    assert classify(old, 12000, 80000, 25000, max_age_days=37).reject_reason == "висить > 37 дн."
+    fresh = make("MacBook Air M1 8/256")
+    fresh.created_at = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    assert classify(fresh, 12000, 80000, 25000, max_age_days=37).reject_reason is None
 
 
 def test_battery_and_cycles():

@@ -34,18 +34,29 @@ def _usernames(name: str) -> set[str]:
 class Settings:
     telegram_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", "").strip())
-    gemini_model: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip())
+    # Моделі в порядку пріоритету. Коли в однієї вичерпується денна квота (429) або вона
+    # перевантажена (503) — бот переходить до наступної. На безкоштовному рівні в кожної
+    # моделі своя квота (~20 запитів на добу), тож кілька моделей = більше аналізів.
+    gemini_models: list[str] = field(default_factory=lambda: _entries("GEMINI_MODELS") or [
+        "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+    ])
+    # Рівень «роздумів»: minimal / low / medium / high. Вище — повільніше й не помітно краще.
+    gemini_thinking: str = field(default_factory=lambda: os.getenv("GEMINI_THINKING", "low").strip())
+    # Оголошення, створені раніше за стільки днів, вважаємо завислими й не показуємо.
+    max_age_days: int = field(default_factory=lambda: _int("MAX_AGE_DAYS", 37))
     # Скільки запитів до Gemini на хвилину (безкоштовний tier має жорсткі ліміти).
     gemini_rpm: int = field(default_factory=lambda: _int("GEMINI_RPM", 8))
     # Скільки нових оголошень аналізувати за один прохід, щоб не спалити квоту.
-    max_analyze_per_scan: int = field(default_factory=lambda: _int("MAX_ANALYZE_PER_SCAN", 40))
+    max_analyze_per_scan: int = field(default_factory=lambda: _int("MAX_ANALYZE_PER_SCAN", 200))
     # Скільки фото оголошення віддавати в Gemini.
-    photos_for_ai: int = field(default_factory=lambda: _int("PHOTOS_FOR_AI", 4))
+    photos_for_ai: int = field(default_factory=lambda: _int("PHOTOS_FOR_AI", 10))
 
     scan_interval_min: int = field(default_factory=lambda: _int("SCAN_INTERVAL_MIN", 30))
     # Нижче цієї ціни (грн) це майже напевно аксесуар, запчастини або скам.
     min_price_uah: int = field(default_factory=lambda: _int("MIN_PRICE_UAH", 12000))
     max_price_uah: int = field(default_factory=lambda: _int("MAX_PRICE_UAH", 80000))
+    # Мінімальна оцінка Gemini для розділу «Найкраще ціна/якість» (1..10).
+    best_min_score: int = field(default_factory=lambda: _int("BEST_MIN_SCORE", 7))
     # Пуш-сповіщення про нове оголошення з AI-оцінкою від цього значення (1..10).
     notify_min_score: int = field(default_factory=lambda: _int("NOTIFY_MIN_SCORE", 8))
     # Якщо задано — бот відповідає лише цим Telegram user id.
