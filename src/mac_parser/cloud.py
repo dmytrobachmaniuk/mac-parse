@@ -74,7 +74,7 @@ async def handle_updates(bot: Bot) -> int:
 
 
 BROKEN_ALERT_EVERY_H = 6
-SOURCE_LABELS = {"olx": "OLX", "prom": "Prom.ua"}
+SOURCE_LABELS = {"olx": "OLX", "prom": "Prom.ua", "tg": "Telegram"}
 
 
 def scan_problem(report) -> str | None:

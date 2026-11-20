@@ -17,7 +17,7 @@ from .db import DB, now
 from .pricing import market_for_row
 from .signals import ai_context
 from . import rates
-from .sources import olx, prom
+from .sources import olx, prom, tg
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +122,33 @@ class Scanner:
                 report.passed_filter += specs.reject_reason is None
             if complete and listings:
                 report.deactivated += self.db.deactivate_missing(source, set(listings))
+        await self._tg(report)
         report.fetched = sum(report.by_source.values())
+
+    async def _tg(self, report: ScanReport) -> None:
+        """Telegram-барахолки: лише нові повідомлення. 0 нових — це норма, а не поломка."""
+        if tg.configured():
+            try:
+                items, last_ids, errors = await tg.fetch(self.db)
+            except Exception as e:  # noqa: BLE001 — Telegram не має валити OLX/Prom
+                log.exception("Telegram не вдалося")
+                items, last_ids, errors = [], {}, [f"Telegram: {e.__class__.__name__}: {e}"]
+            report.by_source["tg"] = len(items)
+            report.errors += errors
+            if errors:
+                report.failed_sources.append("tg")
+            for item in items:
+                uah = to_uah(item.price, item.currency, self.rates["USD"], self.rates["EUR"])
+                specs = classify(item, settings.min_price_uah, settings.max_price_uah, uah, settings.max_age_days)
+                status = self.db.upsert(item, specs, uah)
+                report.new += status == "new"
+                report.passed_filter += specs.reject_reason is None
+                if specs.reject_reason is None:
+                    self.db.supersede_tg(item.key, item.seller_id, item.title)
+            for chat, last in last_ids.items():
+                self.db.meta_set(f"tg_last_id:{chat}", str(last))
+        # Пост у групі не «зникає», коли ноутбук продано, — ховаємо старші за MAX_AGE_DAYS.
+        report.deactivated += self.db.expire_tg(settings.max_age_days)
 
     async def analyze_pending(self, report: ScanReport, limit: int | None = None) -> None:
         if not self.analyzer:

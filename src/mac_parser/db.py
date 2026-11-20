@@ -146,6 +146,28 @@ class DB:
         self.conn.commit()
         return len(gone)
 
+    def supersede_tg(self, key: str, seller_id: str, title: str = "") -> int:
+        """Продавець у Telegram перепостив той самий ноутбук (часто з новою ціною) — старі копії ховаємо
+        (не як продані). Той самий = той самий продавець і та сама конфігурація (чіп, RAM, SSD)."""
+        if not seller_id:
+            return 0
+        cur = self.conn.execute(
+            """UPDATE listings SET active=0
+               WHERE source='tg' AND active=1 AND key!=? AND seller_id=?
+                 AND (chip, ram_gb, ssd_gb) IS (SELECT chip, ram_gb, ssd_gb FROM listings WHERE key=?)""",
+            (key, seller_id, key),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
+    def expire_tg(self, max_age_days: int) -> int:
+        cur = self.conn.execute(
+            "UPDATE listings SET active=0 WHERE source='tg' AND active=1 AND julianday('now') - julianday(created_at) > ?",
+            (max_age_days,),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
     def get(self, key: str) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM listings WHERE key=?", (key,)).fetchone()
 

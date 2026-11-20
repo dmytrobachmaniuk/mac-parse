@@ -67,6 +67,7 @@ def main() -> None:
     p_scan.add_argument("--analyze", type=int, default=None, help="скільки оголошень віддати в AI (0 — без AI)")
     p_cycle = sub.add_parser("cycle", help="один прохід для GitHub Actions: скан, AI, пуші, сайт")
     p_cycle.add_argument("--out", default="site", help="куди зібрати сайт")
+    sub.add_parser("tg-login", help="одноразовий вхід у Telegram для читання барахолок (код вводите ви)")
     p_site = sub.add_parser("site", help="лише зібрати сайт з БД")
     p_site.add_argument("--out", default="site")
     p_show = sub.add_parser("show", help="показати картки з БД")
@@ -84,6 +85,10 @@ def main() -> None:
         from .cloud import run_cycle
 
         asyncio.run(run_cycle(Path(args.out)))
+    elif args.cmd == "tg-login":
+        from .sources import tg
+
+        asyncio.run(tg.login())
     elif args.cmd == "site":
         from pathlib import Path
 

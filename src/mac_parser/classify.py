@@ -27,6 +27,11 @@ MODEL_NUMBERS = {
 
 _CHIP_RE = re.compile(r"(?<![a-zа-яіїє0-9])[mм]\s?([1-5l])(?:\s?(pro|max|ultra))?(?![0-9a-zа-я])")
 _AIR_RE = re.compile(r"(?<![a-z])(air|аир|аір|эйр|ейр)(?![a-zа-я])")
+# «Куплю / шукаю / обміняю» — це не продаж (часто в Telegram-барахолках і на OLX).
+# Допускаємо одне-два слова перед: «Срочно куплю…», «Терміново шукаю…».
+_WANT_RE = re.compile(
+    r"^\W*(?:[a-zа-яіїєґ']+\W+){0,2}(куплю|купл[юя]|шукаю|ищу|потрібен|потрібна|нужен|обміняю|обменяю|ищем|шукаємо)(?![a-zа-яіїє])"
+)
 # Intel-маркери: процесор або рік випуску, коли Air ще був на Intel (≤ 2019).
 _INTEL_RE = re.compile(r"intel|интел|інтел|(?<![a-z0-9])i[357](?![0-9a-z])|core\s*i\d|(?<!\d)201\d(?!\d)")
 # SEO-хвости: «… не макбук про м1 м2 м3 м4», «M2 (ні M3)» — усе після заперечення ігноруємо.
@@ -176,6 +181,8 @@ def classify(
         specs.reject_reason = "не MacBook"
     elif not _AIR_RE.search(title) and not _AIR_RE.search(desc[:400]):
         specs.reject_reason = "не Air"
+    elif _WANT_RE.search(title):
+        specs.reject_reason = "куплю/шукаю"
     elif _ACCESSORY_FOR_RE.search(title) or _ACCESSORY_START_RE.search(title):
         specs.reject_reason = "аксесуар/запчастина"
     elif _BROKEN_RE.search(title):

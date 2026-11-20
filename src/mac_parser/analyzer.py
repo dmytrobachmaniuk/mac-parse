@@ -97,7 +97,7 @@ def _fmt_uah(v: int | None) -> str:
     return f"{v:,}".replace(",", " ") + " грн" if v else "невідомо"
 
 
-SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua"}
+SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua", "tg": "Telegram"}
 
 
 def build_prompt(row: sqlite3.Row, market: Market, extra: str = "") -> str:
@@ -158,6 +158,11 @@ class Analyzer:
     async def _photos(self, urls: list[str]) -> list[types.Part]:
         parts: list[types.Part] = []
         for url in urls[: settings.photos_for_ai]:
+            if not url.startswith("http"):  # фото з Telegram лежать локально (tgphotos/…)
+                path = settings.tg_photo_dir.parent / url
+                if path.exists():
+                    parts.append(types.Part.from_bytes(data=path.read_bytes(), mime_type="image/jpeg"))
+                continue
             try:
                 r = await self.http.get(url)
                 if r.status_code == 200 and r.content:

@@ -296,7 +296,10 @@ details[open] summary svg{transform:rotate(180deg)}
     return s;
   }
   const $ = function (id) { return document.getElementById(id); };
-  const safeUrl = function (u) { return typeof u === "string" && /^https?:\/\//i.test(u) ? u : null; };
+  // http(s) або локальні фото з Telegram-барахолок (tgphotos/<чат>_<id>.jpg) — і нічого іншого.
+  const safeUrl = function (u) {
+    return typeof u === "string" && (/^https?:\/\//i.test(u) || /^tgphotos\/[\w-]+\.jpg$/.test(u)) ? u : null;
+  };
   const num = function (v) { return typeof v === "number" && isFinite(v) ? v : null; };
   const arr = function (v) { return Array.isArray(v) ? v.filter(function (x) { return x != null && x !== ""; }) : []; };
 
@@ -350,7 +353,7 @@ details[open] summary svg{transform:rotate(180deg)}
 
   // ---------- стан ----------
   const TABS = ["best", "M1", "M2", "fav"];
-  const SOURCE_NAMES = { olx: "OLX", prom: "Prom.ua" };
+  const SOURCE_NAMES = { olx: "OLX", prom: "Prom.ua", tg: "Telegram" };
   const sellerFlags = function (l) { return arr(l.seller_info && l.seller_info.flags); };
   const allRisks = function (l) { return arr(l.ai && l.ai.red_flags).concat(sellerFlags(l)); };
   const SORTS = [["quality", "ціна/якість"], ["cheap", "дешевші"], ["new", "нові"]];

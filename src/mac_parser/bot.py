@@ -193,6 +193,9 @@ def prefetch(rows: list[sqlite3.Row], idx: int) -> None:
 
 # ---------------------------------------------------------------- відправка картки
 async def _download(url: str, name: str) -> BufferedInputFile | None:
+    if not url.startswith("http"):  # фото з Telegram-барахолки лежать локально (tgphotos/…)
+        path = settings.tg_photo_dir.parent / url
+        return BufferedInputFile(path.read_bytes(), filename=name) if path.exists() else None
     try:
         r = await scanner.http.get(url)
         if r.status_code == 200 and r.content:

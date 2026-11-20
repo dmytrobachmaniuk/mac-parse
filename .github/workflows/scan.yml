@@ -45,6 +45,14 @@ jobs:
             echo "CREDENTIAL_MAC не задано — використовую окремі секрети"
           fi
 
+      # Фото з Telegram-барахолок не мають публічних посилань — зберігаємо їх між запусками в кеші.
+      - name: Фото з Telegram (кеш)
+        uses: actions/cache@v4
+        with:
+          path: site/tgphotos
+          key: tgphotos-${{ github.run_id }}
+          restore-keys: tgphotos-
+
       - name: Відновити базу з гілки data
         run: |
           mkdir -p data

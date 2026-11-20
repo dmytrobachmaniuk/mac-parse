@@ -59,6 +59,21 @@ class Settings:
     # Кому слати пуші в режимі GitHub Actions (числові chat id через кому). Зберігається в секретах,
     # бо база в гілці data публічна.
     telegram_chat_ids: set[int] = field(default_factory=lambda: _ids("TELEGRAM_CHAT_IDS"))
+    # Telegram-барахолки (групи) читаються від імені вашого акаунта через Telethon.
+    # api_id / api_hash — з my.telegram.org; сесія — рядок, який створює `mac-parser tg-login`.
+    tg_api_id: int = field(default_factory=lambda: _int("TG_API_ID", 0))
+    tg_api_hash: str = field(default_factory=lambda: os.getenv("TG_API_HASH", "").strip())
+    tg_session: str = field(default_factory=lambda: os.getenv("TG_SESSION", "").strip())
+    # Живі барахолки, де трапляються приватні продажі MacBook Air (перевірено пошуком, листопад 2026).
+    tg_chats: list[str] = field(default_factory=lambda: [c.lstrip("@") for c in _entries("TG_CHATS")] or [
+        "baraholka_technology", "Apple_baraholka_888", "applemafiaua", "apple_platform_ua",
+        "baraholka_paradise_apple", "torhivlia_barakholka",
+    ])
+    # Глибина першого читання групи (днів) і максимум повідомлень за прохід на групу.
+    tg_first_days: int = field(default_factory=lambda: _int("TG_FIRST_DAYS", 14))
+    tg_max_messages: int = field(default_factory=lambda: _int("TG_MAX_MESSAGES", 1500))
+    # Куди складати фото з Telegram (публікуються разом із сайтом; у хмарі кешуються між запусками).
+    tg_photo_dir: Path = field(default_factory=lambda: Path(os.getenv("TG_PHOTO_DIR", str(ROOT / "site" / "tgphotos"))))
     # Адреса сайту-каталогу на GitHub Pages (для кнопок у Telegram).
     site_url: str = field(default_factory=lambda: os.getenv("SITE_URL", "").strip().rstrip("/"))
 

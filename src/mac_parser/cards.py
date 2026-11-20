@@ -19,7 +19,7 @@ def escape(text: str) -> str:
     return _html_escape(str(text), quote=False)
 from .pricing import Market, effective_specs
 
-SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua"}
+SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua", "tg": "Telegram"}
 
 TEXT_LIMIT = 4096
 
