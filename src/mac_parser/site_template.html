@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Mac Hunter</title>
+<script>
+  // Тема до першої відмальовки, щоб не блимало: "light" | "dark" | нічого (= як у системі).
+  try { var t = localStorage.getItem("mh:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Шрифт не блокує першу відмальовку: поки він вантажиться (або якщо Google недоступний) — системний шрифт. -->
@@ -19,23 +23,27 @@
   --bad:#B8332A;--bad-ink:#FFFFFF;--bad-bg:#FBE5E2;--bad-tx:#7A1C15;
   --focus:#1F4FD8;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0F1113;--card:#191C1F;--ink:#F2F3EF;--ink2:#DADDD8;--muted:#A3A9AF;--line:#2A2E32;--chip:#24282C;--edge:#4A5056;
-  --inv:#F2F3EF;--inv-ink:#0F1113;--ph:#2A2E32;
-  --good:#2FA36B;--good-ink:#06150D;--good-bg:#12301F;--good-tx:#7FDCA9;
-  --mid:#E6B93A;--mid-ink:#201700;--mid-bg:#33290A;--mid-tx:#F2D27A;
-  --bad:#E0685E;--bad-ink:#1F0503;--bad-bg:#3A1512;--bad-tx:#F5A69E;
-  --focus:#9DB7FF;
+/* Темна тема в тонах GitHub Dark Dimmed: світліший синюватий фон замість майже чорного.
+   Вмикається системою (prefers-color-scheme) або вручну перемикачем (data-theme на <html>). */
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --bg:#22272E;--card:#2D333B;--ink:#CDD9E5;--ink2:#ADBAC7;--muted:#909DAB;--line:#373E47;--chip:#373E47;--edge:#545D68;
+  --inv:#316DCA;--inv-ink:#FFFFFF;--ph:#373E47;
+  --good:#57AB5A;--good-ink:#1C2128;--good-bg:#2F4433;--good-tx:#6BC46D;
+  --mid:#C69026;--mid-ink:#1C2128;--mid-bg:#3D3626;--mid-tx:#DAAA3F;
+  --bad:#E5534B;--bad-ink:#1C2128;--bad-bg:#442D30;--bad-tx:#FF938A;
+  --focus:#539BF5;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  color-scheme:dark;
+  --bg:#22272E;--card:#2D333B;--ink:#CDD9E5;--ink2:#ADBAC7;--muted:#909DAB;--line:#373E47;--chip:#373E47;--edge:#545D68;
+  --inv:#316DCA;--inv-ink:#FFFFFF;--ph:#373E47;
+  --good:#57AB5A;--good-ink:#1C2128;--good-bg:#2F4433;--good-tx:#6BC46D;
+  --mid:#C69026;--mid-ink:#1C2128;--mid-bg:#3D3626;--mid-tx:#DAAA3F;
+  --bad:#E5534B;--bad-ink:#1C2128;--bad-bg:#442D30;--bad-tx:#FF938A;
+  --focus:#539BF5;
 }}
-@supports (color:light-dark(#000,#fff)){:root{
-  --bg:light-dark(#F1F2EE,#0F1113);--card:light-dark(#FFFFFF,#191C1F);--ink:light-dark(#15181B,#F2F3EF);--ink2:light-dark(#2B3035,#DADDD8);
-  --muted:light-dark(#5B6168,#A3A9AF);--line:light-dark(#E3E5E0,#2A2E32);--chip:light-dark(#EEF0EB,#24282C);--edge:light-dark(#CFD3CB,#4A5056);
-  --inv:light-dark(#15181B,#F2F3EF);--inv-ink:light-dark(#FFFFFF,#0F1113);--ph:light-dark(#DDE0D9,#2A2E32);
-  --good:light-dark(#1B7A4B,#2FA36B);--good-ink:light-dark(#FFFFFF,#06150D);--good-bg:light-dark(#DFF1E6,#12301F);--good-tx:light-dark(#14593A,#7FDCA9);
-  --mid:light-dark(#F0C23A,#E6B93A);--mid-ink:light-dark(#241A00,#201700);--mid-bg:light-dark(#FBF0CF,#33290A);--mid-tx:light-dark(#5C4100,#F2D27A);
-  --bad:light-dark(#B8332A,#E0685E);--bad-ink:light-dark(#FFFFFF,#1F0503);--bad-bg:light-dark(#FBE5E2,#3A1512);--bad-tx:light-dark(#7A1C15,#F5A69E);
-  --focus:light-dark(#1F4FD8,#9DB7FF);
-}}
+:root[data-theme=light]{color-scheme:light}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-padding-top:120px}
 body{margin:0;background:var(--bg);color:var(--ink);font:500 14px/1.4 Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -46,11 +54,20 @@ svg{flex:none}
 .wrap{max-width:1120px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:16px}
 
 /* шапка */
-.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-.02em}
+header{position:relative;text-align:center}
+.brand{display:flex;align-items:center;justify-content:center;gap:10px;padding:4px 52px 0}
+.brand svg{width:40px;height:40px;filter:drop-shadow(0 4px 10px rgb(49 109 202 / .35))}
+h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em}
+h1 em{font-style:normal;background:linear-gradient(90deg,#3B82F6,#7C5CFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tagline{font-size:12px;font-weight:600;color:var(--muted);margin-top:2px}
+.theme{position:absolute;right:0;top:4px;width:44px;height:44px;border:1px solid var(--edge);border-radius:12px;background:var(--card);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .sub{font-size:12px;font-weight:600;color:var(--muted)}
-.prog{height:4px;border-radius:2px;background:var(--edge);overflow:hidden;margin:10px 0 6px}
-.prog i{display:block;height:100%;background:var(--ink)}
+.prog{height:6px;border-radius:3px;background:var(--edge);overflow:hidden;margin:14px auto 6px;max-width:520px}
+.prog i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#3B82F6,#7C5CFF)}
+.status{display:flex;flex-direction:column;align-items:center;gap:2px}
+.status #upd{font-size:13px;font-weight:700;color:var(--ink2)}
+.note{text-align:left}
+[hidden]{display:none !important}  /* інакше display:flex у .note показує порожню смужку */
 .note{display:flex;gap:10px;align-items:flex-start;background:var(--mid-bg);color:var(--mid-tx);border-radius:12px;padding:10px 12px;font-size:13px;font-weight:600;margin-top:10px}
 
 /* панель керування */
@@ -152,6 +169,21 @@ details[open] summary svg{transform:rotate(180deg)}
 .compact .card:not(.open) .full{display:none}
 .compact .card.open .rowbtn{border-bottom:1px solid var(--line)}
 
+/* пояснення «Найкраще» */
+.explain{background:var(--card);border:0;border-radius:14px;padding:0 14px}
+.explain summary span{display:flex;align-items:center;gap:6px}
+.explain-body{padding:0 0 12px;font-size:13px;color:var(--ink2);display:flex;flex-direction:column;gap:8px}
+.explain-body p{margin:0;text-wrap:pretty}
+
+/* сторінки */
+.pager{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px}
+.pager:empty{display:none}
+.pager button{min-width:44px;min-height:44px;border:1px solid var(--edge);border-radius:12px;background:var(--card);color:var(--ink);font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 10px}
+.pager button[aria-current=page]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+.pager button:disabled{opacity:.35;cursor:default}
+.pager .gap{min-width:20px;text-align:center;color:var(--muted);font-weight:700}
+.pager .range{flex-basis:100%;text-align:center;font-size:12px;font-weight:600;color:var(--muted)}
+
 .empty{background:var(--card);border-radius:18px;padding:32px 20px;text-align:center;color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:12px;grid-column:1/-1}
 .empty b{color:var(--ink);font-size:16px;font-weight:800}
 @media (prefers-reduced-motion:no-preference){
@@ -163,9 +195,22 @@ details[open] summary svg{transform:rotate(180deg)}
 <body>
 <div class="wrap" id="app">
   <header>
-    <div class="top"><h1>Mac Hunter</h1><span class="sub" id="upd">завантаження…</span></div>
+    <button class="theme" id="theme" type="button"></button>
+    <div class="brand">
+      <!-- Логотип: ноутбук із прицілом на екрані -->
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B82F6"/><stop offset="1" stop-color="#7C5CFF"/></linearGradient></defs>
+        <rect width="40" height="40" rx="11" fill="url(#lg)"/>
+        <rect x="9" y="10" width="22" height="15" rx="2.5" fill="none" stroke="#fff" stroke-width="2.2"/>
+        <path d="M5.5 29.5h29" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="20" cy="17.5" r="3.6" fill="none" stroke="#fff" stroke-width="1.8"/>
+        <path d="M20 11.8v2.2M20 21v2.2M14.3 17.5h2.2M23.5 17.5h2.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <div><h1>Mac <em>Hunter</em></h1></div>
+    </div>
+    <div class="tagline">MacBook Air M1 / M2 на OLX · оцінка угод від AI</div>
     <div class="prog" id="prog" role="progressbar" aria-label="Перевірено AI" aria-valuemin="0"><i></i></div>
-    <div class="sub" id="ana"></div>
+    <div class="status"><span id="upd">завантаження…</span><span class="sub" id="ana"></span></div>
     <div class="note" id="note" role="status" hidden></div>
   </header>
   <div class="bar">
@@ -176,7 +221,9 @@ details[open] summary svg{transform:rotate(180deg)}
     <button class="ghost" id="view" type="button" aria-pressed="false"></button>
   </div>
   <div class="filters" id="filters" role="group" aria-label="Фільтри"></div>
+  <div id="explain"></div>
   <main class="list" id="list" aria-live="polite"></main>
+  <nav class="pager" id="pager" aria-label="Сторінки"></nav>
 </div>
 <script>
 "use strict";
@@ -190,6 +237,9 @@ details[open] summary svg{transform:rotate(180deg)}
     left: "m15 5-7 7 7 7",
     right: "m9 5 7 7-7 7",
     down: "m6 9 6 6 6-6",
+    sun: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+    moon: "M20 14.5A8 8 0 1 1 9.5 4a6.500 6.500 0 0 0 10.500 10.500z",
+    auto: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18M12 7.500h4M12 12h5M12 16.500h4",
     img: "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4",
     user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20a7 7 0 0 1 14 0",
     shop: "M4 9l1.500-5h13L20 9M5 9v11h14V9M4 9h16",
@@ -297,8 +347,10 @@ details[open] summary svg{transform:rotate(180deg)}
     tab: TABS.indexOf(qTab) >= 0 ? qTab : "best",
     sort: SORTS.some(function (s) { return s[0] === store.get("sort"); }) ? store.get("sort") : "quality",
     compact: store.get("compact") === "1",
-    on: {}, min: null, max: null
+    on: {}, min: null, max: null,
+    page: Math.max(1, parseInt(new URLSearchParams(location.search).get("page"), 10) || 1)
   };
+  const PER = 20;  // ноутбуків на сторінку
   let data = null;
 
   function passes(l) {
@@ -474,7 +526,7 @@ details[open] summary svg{transform:rotate(180deg)}
     const sort = $("sort");
     sort.replaceChildren.apply(sort, SORTS.map(function (s) {
       return el("button", { type: "button", "aria-pressed": String(state.sort === s[0]), text: s[1],
-        onclick: function () { state.sort = s[0]; store.set("sort", s[0]); render(); } });
+        onclick: function () { state.sort = s[0]; store.set("sort", s[0]); resetPage(); render(); } });
     }));
     const v = $("view");
     v.setAttribute("aria-pressed", String(state.compact));
@@ -488,20 +540,78 @@ details[open] summary svg{transform:rotate(180deg)}
       i.addEventListener("input", function () {
         const n = parseInt(i.value, 10);
         state[key] = isFinite(n) && n > 0 ? n : null;
-        renderControls(); renderList();
+        resetPage(); renderControls(); renderList();
       });
       return i;
     };
     const f = $("filters");
     f.replaceChildren.apply(f, FILTERS.map(function (x) {
       return el("button", { class: "f", type: "button", "aria-pressed": String(!!state.on[x[0]]), text: x[1],
-        onclick: function () { state.on[x[0]] = !state.on[x[0]]; render(); } });
+        onclick: function () { state.on[x[0]] = !state.on[x[0]]; resetPage(); render(); } });
     }).concat([el("span", { class: "price" }, "ціна", priceInput("min", "від"), priceInput("max", "до"))]));
   }
+  function visibleItems() {
+    return data.listings.filter(function (l) { return passes(l) && inTab(l, state.tab); }).sort(cmp[state.sort]);
+  }
+  function syncUrl() {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("tab", state.tab);
+      if (state.page > 1) u.searchParams.set("page", state.page); else u.searchParams.delete("page");
+      history.replaceState(null, "", u);
+    } catch (e) {}
+  }
+  function setPage(p) {
+    state.page = p;
+    syncUrl();
+    renderList();
+    $("list").scrollIntoView({ block: "start" });
+  }
+  function pageNumbers(cur, total) {
+    // 1 … 4 5 6 … 12 — завжди перша, остання й сусіди поточної
+    const out = [];
+    for (let i = 1; i <= total; i++) {
+      if (i === 1 || i === total || Math.abs(i - cur) <= 1) out.push(i);
+      else if (out[out.length - 1] !== "…") out.push("…");
+    }
+    return out;
+  }
+  function renderPager(total) {
+    const pager = $("pager");
+    const pages = Math.ceil(total / PER);
+    if (pages <= 1) { pager.replaceChildren(); return; }
+    const btn = function (label, page, attrs) {
+      return el("button", Object.assign({ type: "button", onclick: function () { setPage(page); } }, attrs || {}), label);
+    };
+    const nodes = [btn(icon("left", 18, 2.5), state.page - 1, { "aria-label": "Попередня сторінка", disabled: state.page === 1 })];
+    pageNumbers(state.page, pages).forEach(function (p) {
+      nodes.push(p === "…" ? el("span", { class: "gap", text: "…" })
+        : btn(String(p), p, { "aria-label": "Сторінка " + p, "aria-current": p === state.page ? "page" : null }));
+    });
+    nodes.push(btn(icon("right", 18, 2.5), state.page + 1, { "aria-label": "Наступна сторінка", disabled: state.page === pages }),
+      el("span", { class: "range", text: ((state.page - 1) * PER + 1) + "–" + Math.min(total, state.page * PER) + " із " + total }));
+    pager.replaceChildren.apply(pager, nodes);  // масив треба розгорнути, інакше він стане текстом
+  }
+  function renderExplain() {
+    const box = $("explain");
+    if (state.tab !== "best" || !data) { box.replaceChildren(); return; }
+    box.replaceChildren(el("details", { class: "explain" },
+      el("summary", null, el("span", null, icon("star", 15), " Як складається «Найкраще»?"), icon("down", 18)),
+      el("div", { class: "explain-body" },
+        el("p", { text: "Сюди потрапляють оголошення, яким AI поставив оцінку угоди " + data.best_min_score + " або вище з 10." }),
+        el("p", { text: "Оцінку AI ставить, дивлячись на все разом: ціну відносно медіани схожих оголошень (той самий чіп, " +
+          "пам'ять, накопичувач і діагональ), стан на фото, батарею й цикли (особливо якщо видно на скріні), " +
+          "комплект і ризики — iCloud-блок, ремонти, підозрілу ціну. 8+ — варто дзвонити сьогодні, 5–7 — нормально, ≤ 4 — пропустити." }),
+        el("p", { text: "Порядок: спершу вища оцінка, за однакової — більша знижка від ринкової медіани, далі — дешевше." }))));
+  }
   function renderList() {
-    const items = data.listings.filter(function (l) { return passes(l) && inTab(l, state.tab); }).sort(cmp[state.sort]);
+    const items = visibleItems();
     const list = $("list");
+    renderExplain();
+    const pages = Math.max(1, Math.ceil(items.length / PER));
+    if (state.page > pages) state.page = pages;
     if (!items.length) {
+      renderPager(0);
       const filtered = hasFilters();
       list.replaceChildren(el("div", { class: "empty" },
         el("b", { text: filtered ? "Нічого не знайдено за цими фільтрами" : state.tab === "best" ? "Поки що немає найкращих" : "Оголошень немає" }),
@@ -512,18 +622,17 @@ details[open] summary svg{transform:rotate(180deg)}
       return;
     }
     const frag = document.createDocumentFragment();
-    items.forEach(function (l) { frag.append(card(l)); });
+    items.slice((state.page - 1) * PER, state.page * PER).forEach(function (l) { frag.append(card(l)); });
     list.replaceChildren(frag);
+    renderPager(items.length);
   }
   function render() { renderControls(); renderFilters(); renderList(); }
-  function resetFilters() { state.on = {}; state.min = state.max = null; render(); }
+  // Будь-яка зміна вибірки (розділ, сортування, фільтр, ціна) повертає на першу сторінку.
+  function resetPage() { state.page = 1; syncUrl(); }
+  function resetFilters() { state.on = {}; state.min = state.max = null; resetPage(); render(); }
   function setTab(t) {
     state.tab = t;
-    try {
-      const u = new URL(location.href);
-      u.searchParams.set("tab", t);
-      history.replaceState(null, "", u);
-    } catch (e) {}
+    resetPage();
     render();
   }
   function focusHash() {
@@ -534,8 +643,12 @@ details[open] summary svg{transform:rotate(180deg)}
     if (!l) return;
     if (!document.getElementById(id)) {
       state.on = {}; state.min = state.max = null;
-      if (!inTab(l, state.tab)) setTab(l.chip);  // разом з адресою, щоб оновлення сторінки лишило той самий розділ
-      else render();
+      if (!inTab(l, state.tab)) state.tab = l.chip;
+      // картка може бути на іншій сторінці — відкриваємо саме ту
+      const idx = visibleItems().findIndex(function (x) { return x.key === id; });
+      state.page = idx >= 0 ? Math.floor(idx / PER) + 1 : 1;
+      syncUrl();  // разом з адресою, щоб оновлення сторінки лишило той самий розділ
+      render();
     }
     const n = document.getElementById(id);
     if (!n) return;
@@ -560,6 +673,26 @@ details[open] summary svg{transform:rotate(180deg)}
     note.hidden = !data.ai_note;
     if (data.ai_note) note.replaceChildren(icon("alert", 18), el("span", { text: data.ai_note }));
   }
+
+  // ---------- тема ----------
+  const THEMES = [["auto", "як у системі", "auto"], ["light", "світла", "sun"], ["dark", "темна", "moon"]];
+  function renderTheme() {
+    const cur = store.get("theme") || "auto";
+    const t = THEMES.find(function (x) { return x[0] === cur; }) || THEMES[0];
+    const b = $("theme");
+    b.replaceChildren(icon(t[2], 20, 2));
+    b.setAttribute("aria-label", "Тема: " + t[1] + ". Натисніть, щоб змінити");
+    b.title = "Тема: " + t[1];
+  }
+  $("theme").addEventListener("click", function () {
+    const cur = store.get("theme") || "auto";
+    const next = THEMES[(THEMES.findIndex(function (x) { return x[0] === cur; }) + 1) % THEMES.length][0];
+    store.set("theme", next);
+    if (next === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = next;
+    renderTheme();
+  });
+  renderTheme();
 
   $("view").addEventListener("click", function () {
     state.compact = !state.compact;
