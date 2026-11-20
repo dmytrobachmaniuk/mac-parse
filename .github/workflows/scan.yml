@@ -32,6 +32,19 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
 
+      # Увесь .env можна покласти в ОДИН секрет CREDENTIAL_MAC (скопіювати файл цілком).
+      # Окремі секрети (GEMINI_API_KEY тощо), якщо задані, мають пріоритет.
+      - name: Зібрати .env із секрету CREDENTIAL_MAC
+        env:
+          CREDENTIAL_MAC: ${{ secrets.CREDENTIAL_MAC }}
+        run: |
+          if [ -n "$CREDENTIAL_MAC" ]; then
+            printf '%s\n' "$CREDENTIAL_MAC" | tr -d '\r' > .env
+            echo "CREDENTIAL_MAC: .env зібрано, ключів: $(grep -cE '^[A-Z_]+=.' .env)"
+          else
+            echo "CREDENTIAL_MAC не задано — використовую окремі секрети"
+          fi
+
       - name: Відновити базу з гілки data
         run: |
           mkdir -p data

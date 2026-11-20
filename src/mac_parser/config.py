@@ -6,10 +6,15 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env")
+# У GitHub Actions відсутній секрет приходить як ПОРОЖНЯ змінна, і load_dotenv її не перезапише.
+# Тому порожні значення доповнюємо з .env (у хмарі він збирається з секрету CREDENTIAL_MAC).
+for _k, _v in dotenv_values(ROOT / ".env").items():
+    if _v and not os.environ.get(_k):
+        os.environ[_k] = _v
 
 
 def _int(name: str, default: int) -> int:
