@@ -136,6 +136,21 @@ def extract_memory(title: str, description: str) -> tuple[int | None, int | None
     return ram, ssd
 
 
+_SERIAL_RE = re.compile(
+    r"(?:серійн\w*\s*(?:номер)?|серийн\w*\s*(?:номер)?|serial(?:\s*number)?|s/n|sn)\W{0,6}([A-Z0-9]{10,12})(?![A-Z0-9])",
+    re.I,
+)
+
+
+def extract_serial(facts: list[str] | None) -> str | None:
+    """Серійний номер Mac зі скрінів «Про цей Mac» / гравіювання (10–12 латинських літер і цифр)."""
+    for fact in facts or []:
+        m = _SERIAL_RE.search(fact or "")
+        if m and any(ch.isdigit() for ch in m.group(1)) and any(ch.isalpha() for ch in m.group(1)):
+            return m.group(1).upper()
+    return None
+
+
 def age_days(iso: str) -> int | None:
     """Скільки повних днів минуло від дати OLX (ISO з часовою зоною)."""
     try:
@@ -165,6 +180,8 @@ def classify(
         specs.reject_reason = "аксесуар/запчастина"
     elif _BROKEN_RE.search(title):
         specs.reject_reason = "несправний/на запчастини"
+    elif listing.params.get("condition") == "new":
+        specs.reject_reason = "новий (не вживаний)"
     elif uah_price is None:
         specs.reject_reason = "без ціни"
     elif uah_price < min_price_uah:
@@ -196,12 +213,12 @@ def classify(
     return specs
 
 
-def to_uah(price: int | None, currency: str, usd_rate: float) -> int | None:
+def to_uah(price: int | None, currency: str, usd_rate: float, eur_rate: float | None = None) -> int | None:
     if price is None:
         return None
     cur = (currency or "UAH").upper()
     if cur == "USD":
         return round(price * usd_rate)
     if cur == "EUR":
-        return round(price * usd_rate * 1.08)
+        return round(price * (eur_rate or usd_rate * 1.08))
     return price

@@ -97,9 +97,13 @@ def _fmt_uah(v: int | None) -> str:
     return f"{v:,}".replace(",", " ") + " грн" if v else "невідомо"
 
 
-def build_prompt(row: sqlite3.Row, market: Market) -> str:
+SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua"}
+
+
+def build_prompt(row: sqlite3.Row, market: Market, extra: str = "") -> str:
     params = json.loads(row["params"] or "{}")
-    return f"""Сьогодні {date.today().isoformat()}. Проаналізуй оголошення з OLX.
+    extra_block = f"\nДодатково (наші дані):\n{extra}\n" if extra else ""
+    return f"""Сьогодні {date.today().isoformat()}. Проаналізуй оголошення з {SOURCE_NAMES.get(row['source'], row['source'])}.
 
 Заголовок: {row['title']}
 Ціна: {row['price']} {row['currency']} (≈ {_fmt_uah(row['price_uah'])}){' , торг' if row['negotiable'] else ''}
@@ -112,7 +116,7 @@ def build_prompt(row: sqlite3.Row, market: Market) -> str:
 Ринок на OLX зараз для такої ж конфігурації: медіана {_fmt_uah(market.median)},
 діапазон P25–P75 {_fmt_uah(market.low)} – {_fmt_uah(market.high)}, вибірка {market.count} оголошень.
 (Якщо вибірка менша за 3 — спирайся на власне знання ринку вживаних MacBook в Україні.)
-
+{extra_block}
 Опис продавця:
 \"\"\"
 {(row['description'] or '')[:4000]}
@@ -209,9 +213,9 @@ class Analyzer:
                 log.warning("Gemini %s на %s, пробую далі", getattr(e, "code", "5xx"), model)
                 await asyncio.sleep(5 * overloaded)
 
-    async def analyze(self, row: sqlite3.Row, market: Market) -> dict:
+    async def analyze(self, row: sqlite3.Row, market: Market, extra: str = "") -> dict:
         photos = await self._photos(json.loads(row["photos"]))
-        prompt = build_prompt(row, market).replace("{n}", str(len(photos)))
+        prompt = build_prompt(row, market, extra).replace("{n}", str(len(photos)))
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM,
             response_mime_type="application/json",

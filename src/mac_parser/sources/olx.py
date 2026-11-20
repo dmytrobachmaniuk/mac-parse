@@ -91,6 +91,10 @@ def parse_ad(ad: dict) -> Listing:
         created_at=ad.get("createdTime") or "",
         refreshed_at=ad.get("lastRefreshTime") or ad.get("createdTime") or "",
         params=params,
+        seller_id=f"olx:{user['id']}" if user.get("id") else "",
+        seller_created=user.get("created") or user.get("memberSince") or "",
+        seller_verified=(user.get("verification") or {}).get("status") not in (None, "", "none"),
+        seller_last_seen=user.get("lastSeen") or "",
     )
 
 
@@ -100,15 +104,29 @@ def parse_page(page_html: str) -> tuple[list[Listing], int]:
     return ads, int(listing.get("totalPages") or 1)
 
 
+async def _fetch_page(client: httpx.AsyncClient, query: str, page: int, attempts: int = 3) -> tuple[list[Listing], int]:
+    """Одна сторінка з повторами: тимчасовий 5xx/429/обрив не має губити весь скан."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            resp = await client.get(search_url(query, page))
+            if resp.status_code == 200:
+                return parse_page(resp.text)
+            last = OlxError(f"OLX {resp.status_code} на сторінці {page} для «{query}»")
+            if resp.status_code in (403, 404):  # блок або сторінки нема — повтор не допоможе
+                break
+        except (httpx.HTTPError, OlxError) as e:
+            last = e
+        await asyncio.sleep(3 * (attempt + 1) + random.random())
+    raise last if isinstance(last, OlxError) else OlxError(f"OLX недоступний ({last.__class__.__name__}) для «{query}»")
+
+
 async def fetch_query(client: httpx.AsyncClient, query: str) -> list[Listing]:
     """Усі сторінки пошуку. Кидає OlxError, якщо не вдалося пройти до кінця."""
     seen: dict[str, Listing] = {}
     page, total = 1, 1
     while page <= min(total, MAX_PAGES):
-        resp = await client.get(search_url(query, page))
-        if resp.status_code != 200:
-            raise OlxError(f"OLX {resp.status_code} на сторінці {page} для «{query}»")
-        ads, total = parse_page(resp.text)
+        ads, total = await _fetch_page(client, query, page)
         for ad in ads:
             seen.setdefault(ad.ext_id, ad)
         log.info("OLX «%s»: сторінка %d/%d, +%d", query, page, total, len(ads))

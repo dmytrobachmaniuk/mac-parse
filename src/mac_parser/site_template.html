@@ -75,7 +75,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,#3B82F6,#7C5CFF);-webki
 
 /* панель керування */
 .bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin:-8px 0}
-.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--line);border-radius:14px;padding:4px}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:var(--line);border-radius:14px;padding:4px}
 .tabs button{min-height:44px;border:0;border-radius:10px;background:transparent;color:var(--ink2);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
 .tabs button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:800}
 .tabs small{font-size:12px;font-weight:700;color:var(--muted)}
@@ -103,6 +103,18 @@ h1 em{font-style:normal;background:linear-gradient(90deg,#3B82F6,#7C5CFF);-webki
 .track img{flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:center;scroll-snap-stop:always}
 .pill{position:absolute;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700}
 .age{left:12px;top:12px;background:var(--card);color:var(--ink)}
+.srcp{right:12px;top:12px;background:#15181B;color:#fff}
+.nophoto .srcp{position:absolute}
+.sold{color:var(--good-tx);font-weight:700}
+.repost{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--mid-tx);background:var(--mid-bg);border-radius:8px;padding:4px 8px;align-self:flex-start}
+.acts{display:flex;gap:8px}
+.act{flex:1;min-height:44px;border:1px solid var(--edge);border-radius:12px;background:transparent;color:var(--ink);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
+.act[aria-pressed=true]{background:var(--chip);border-color:var(--ink2)}
+.act:first-child[aria-pressed=true]{color:var(--focus);border-color:var(--focus)}
+.favmark{color:var(--focus);display:inline-flex}
+.hidebar{text-align:center;font-size:13px;font-weight:600;color:var(--muted)}
+.hidebar button{border:0;background:none;color:var(--focus);font-weight:700;min-height:44px;padding:0 6px}
+@media (max-width:420px){.tabs .favlbl{display:none}}
 .cnt{right:12px;bottom:12px;background:#15181B;color:#fff}
 .nav{position:absolute;top:calc(50% - 22px);width:44px;height:44px;border:0;border-radius:22px;background:var(--card);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .nav.p{left:8px}.nav.n{right:8px}
@@ -227,6 +239,7 @@ details[open] summary svg{transform:rotate(180deg)}
   <div id="explain"></div>
   <main class="list" id="list" aria-live="polite"></main>
   <nav class="pager" id="pager" aria-label="Сторінки"></nav>
+  <div class="hidebar" id="hidebar"></div>
 </div>
 <script>
 "use strict";
@@ -240,6 +253,9 @@ details[open] summary svg{transform:rotate(180deg)}
     left: "m15 5-7 7 7 7",
     right: "m9 5 7 7-7 7",
     down: "m6 9 6 6 6-6",
+    bookmark: "M6 3h12v18l-6-4-6 4z",
+    eyeoff: "M3 3l18 18M10.6 6.1A9.900 9.900 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3 3.600M6.600 6.600C4.200 8.200 3 12 3 12s4 6 9 6a9 9 0 0 0 4.400-1.100M9.900 9.900a3 3 0 0 0 4.200 4.200",
+    repeat: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
     sun: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
     moon: "M20 14.5A8 8 0 1 1 9.5 4a6.500 6.500 0 0 0 10.500 10.500z",
     auto: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18M12 7.500h4M12 12h5M12 16.500h4",
@@ -313,8 +329,9 @@ details[open] summary svg{transform:rotate(180deg)}
   function ageText(l) {
     const n = num(l.created_days);
     if (n == null) return null;
-    if (n <= 0) return "сьогодні на OLX";
-    return n + " " + plural(n, ["день", "дні", "днів"]) + " на OLX";
+    const where = " на " + (SOURCE_NAMES[l.source] || "OLX");
+    if (n <= 0) return "сьогодні" + where;
+    return n + " " + plural(n, ["день", "дні", "днів"]) + where;
   }
   const ssdText = function (v) { return v >= 1024 ? (v / 1024) + " ТБ" : v + " ГБ"; };
   const scoreClass = function (s) { return s >= 8 ? "good" : s >= 5 ? "mid" : "bad"; };
@@ -332,14 +349,17 @@ details[open] summary svg{transform:rotate(180deg)}
   }
 
   // ---------- стан ----------
-  const TABS = ["best", "M1", "M2"];
+  const TABS = ["best", "M1", "M2", "fav"];
+  const SOURCE_NAMES = { olx: "OLX", prom: "Prom.ua" };
+  const sellerFlags = function (l) { return arr(l.seller_info && l.seller_info.flags); };
+  const allRisks = function (l) { return arr(l.ai && l.ai.red_flags).concat(sellerFlags(l)); };
   const SORTS = [["quality", "ціна/якість"], ["cheap", "дешевші"], ["new", "нові"]];
   const FILTERS = [
     ["ram16", "16 ГБ RAM", function (l) { return num(l.ram) >= 16; }],
     ["ssd512", "512 ГБ+", function (l) { return num(l.ssd) >= 512; }],
     ["priv", "лише приватні", function (l) { return !l.business; }],
     ["batt85", "батарея ≥ 85%", function (l) { return num(l.battery_pct) >= 85; }],
-    ["clean", "без ризиків", function (l) { return !!l.ai && arr(l.ai.red_flags).length === 0; }]
+    ["clean", "без ризиків", function (l) { return !!l.ai && allRisks(l).length === 0; }]
   ];
   const store = {
     get: function (k) { try { return localStorage.getItem("mh:" + k); } catch (e) { return null; } },
@@ -356,13 +376,24 @@ details[open] summary svg{transform:rotate(180deg)}
   const PER = 20;  // ноутбуків на сторінку
   let data = null;
 
+  // ⭐ Обране і 🙈 приховане — на цьому пристрої (localStorage), без акаунтів.
+  function loadSet(k) { try { return new Set(JSON.parse(store.get(k) || "[]")); } catch (e) { return new Set(); } }
+  const favs = loadSet("fav"), hidden = loadSet("hidden");
+  function toggleIn(set, k, key) {
+    if (set.has(key)) set.delete(key); else set.add(key);
+    store.set(k, JSON.stringify(Array.from(set)));
+  }
+  state.showHidden = false;
+
   function passes(l) {
+    if (state.tab !== "fav" && hidden.has(l.key) !== state.showHidden) return false;
     for (const f of FILTERS) if (state.on[f[0]] && !f[2](l)) return false;
     if (state.min != null && l.price < state.min) return false;
     if (state.max != null && l.price > state.max) return false;
     return true;
   }
   function inTab(l, tab) {
+    if (tab === "fav") return favs.has(l.key);
     if (tab === "best") return !!l.ai && num(l.ai.deal_score) != null && l.ai.deal_score >= data.best_min_score;
     return l.chip === tab;
   }
@@ -384,13 +415,14 @@ details[open] summary svg{transform:rotate(180deg)}
     const photos = arr(l.photos).map(safeUrl).filter(Boolean);
     const age = ageText(l);
     const agePill = age && el("span", { class: "pill age", text: age });
-    if (!photos.length) return el("div", { class: "nophoto" }, icon("img", 18), "без фото", agePill);
+    const srcPill = el("span", { class: "pill srcp", text: SOURCE_NAMES[l.source] || l.source || "OLX" });
+    if (!photos.length) return el("div", { class: "nophoto" }, icon("img", 18), "без фото", agePill, srcPill);
     const track = el("div", { class: "track", tabindex: "0", role: "group", "aria-label": "Фото оголошення, " + photos.length });
     photos.forEach(function (u, i) {
       track.append(el("img", { src: u, alt: "Фото " + (i + 1) + " із " + photos.length, loading: "lazy", decoding: "async",
         width: 1000, height: 700, referrerpolicy: "no-referrer" }));
     });
-    const box = el("div", { class: "gal" }, track, agePill);
+    const box = el("div", { class: "gal" }, track, agePill, srcPill);
     if (photos.length > 1) {
       const cnt = el("span", { class: "pill cnt", text: "1 / " + photos.length });
       const go = function (dir) { track.scrollBy({ left: dir * track.clientWidth }); };
@@ -449,14 +481,13 @@ details[open] summary svg{transform:rotate(180deg)}
     return el("div", null, el("h4", { text: title }), el("ul", null, items.map(function (t) { return el("li", { text: t }); })));
   }
   function aiPart(l) {
-    const a = l.ai;
-    if (!a) return null;
-    const flags = arr(a.red_flags), out = [];
+    const a = l.ai, flags = allRisks(l), out = [];
     if (flags.length) {
       out.push(el("div", { class: "risk" },
         el("h3", null, icon("alert", 16, 2.5), flags.length + " " + plural(flags.length, ["ризик", "ризики", "ризиків"])),
         el("ul", null, flags.map(function (t) { return el("li", { text: t }); }))));
-    } else out.push(el("div", { class: "clean" }, icon("shield", 16, 2.5), "ризиків не знайдено"));
+    } else if (a) out.push(el("div", { class: "clean" }, icon("shield", 16, 2.5), "ризиків не знайдено"));
+    if (!a) return out;
     if (a.summary) out.push(el("p", { class: "sum", text: a.summary }));
     const blocks = [
       listBlock("Прочитано з фото", a.photo_facts), listBlock("Візуальні дефекти", a.visual_defects),
@@ -474,13 +505,22 @@ details[open] summary svg{transform:rotate(180deg)}
     if (l.orig_price) extra.push(l.orig_price);
     if (num(l.first_price) != null && l.first_price !== l.price) extra.push("було " + uah(l.first_price));
     if (l.negotiable) extra.push("торг");
-    return [line, extra.length ? el("span", { class: "sub", text: extra.join(" · ") }) : null];
+    const sold = l.sold && num(l.sold.median) != null
+      ? el("span", { class: "sub sold", text: "реально продають за ~" + uahShort(l.sold.median) + " (" + l.sold.count + " " +
+          plural(l.sold.count, ["продаж", "продажі", "продажів"]) + " за 60 дн." +
+          (num(l.sold.days) != null ? ", зазвичай за " + l.sold.days + " дн." : "") + ")" })
+      : null;
+    const rp = l.repost && l.repost.since
+      ? el("span", { class: "repost" }, icon("repeat", 14, 2.5),
+          "перевиставлено: продається з " + day(l.repost.since) + (num(l.repost.first_price) != null ? " (тоді " + uah(l.repost.first_price) + ")" : ""))
+      : null;
+    return [line, sold, extra.length ? el("span", { class: "sub", text: extra.join(" · ") }) : null, rp];
   }
   function compactRow(l, card) {
     const d = deltaInfo(l), s = l.ai ? num(l.ai.deal_score) : null;
     const photo = safeUrl(arr(l.photos)[0]);
     const cfg = [l.chip, num(l.ram) != null ? l.ram + " ГБ" : null, num(l.ssd) != null ? ssdText(l.ssd) : null, l.color].filter(Boolean).join(" · ");
-    const flags = l.ai ? arr(l.ai.red_flags).length : 0;
+    const flags = allRisks(l).length;
     const meta = [
       flags ? flags + " " + plural(flags, ["ризик", "ризики", "ризиків"]) : (num(l.battery_pct) != null ? "батарея " + l.battery_pct + "%" : null),
       l.business ? "магазин" : null, l.city,
@@ -491,7 +531,8 @@ details[open] summary svg{transform:rotate(180deg)}
       photo ? el("img", { class: "th", src: photo, alt: "", loading: "lazy", decoding: "async", width: 72, height: 72, referrerpolicy: "no-referrer" })
             : el("span", { class: "th" }, icon("img", 20)),
       el("span", { class: "in" },
-        el("span", { class: "l1" }, el("b", { text: uah(l.price) }), d && el("span", { class: d.cls, text: d.short })),
+        el("span", { class: "l1" }, favs.has(l.key) && el("span", { class: "favmark", "aria-label": "в обраному" }, icon("bookmark", 14, 2.5)),
+          el("b", { text: uah(l.price) }), d && el("span", { class: d.cls, text: d.short })),
         el("span", { class: "l2", text: cfg }),
         el("span", { class: "l3", text: meta })),
       s == null ? el("span", { class: "score none", role: "img", "aria-label": "Ще без оцінки AI", text: "?" })
@@ -512,9 +553,26 @@ details[open] summary svg{transform:rotate(180deg)}
           el("span", { class: "t", text: l.title }),
           el("span", { class: "who" }, icon(l.business ? "shop" : "user", 14),
             [l.seller, l.business ? "магазин / перекуп" : "приватна особа", l.city].filter(Boolean).join(" · ")),
+          arr(l.seller_info && l.seller_info.notes).length ? el("span", { text: "продавець: " + l.seller_info.notes.join(" · ") }) : null,
           el("span", { text: "створено " + day(l.created) + " · оновлено " + day(l.refreshed) })),
-        url && el("a", { class: "cta", href: url, target: "_blank", rel: "noopener noreferrer" }, "Відкрити на OLX", icon("ext", 16, 2.5)))));
+        el("div", { class: "acts" },
+          el("button", { class: "act", type: "button",
+            onclick: function () { toggleIn(favs, "fav", l.key); markActs(c, l); renderControls(); if (state.tab === "fav") renderList(); } },
+            icon("bookmark", 16, 2.5), el("span", { class: "lbl" })),
+          el("button", { class: "act", type: "button",
+            onclick: function () { toggleIn(hidden, "hidden", l.key); renderControls(); renderList(); } },
+            icon("eyeoff", 16, 2.5), el("span", { class: "lbl" }))),
+        url && el("a", { class: "cta", href: url, target: "_blank", rel: "noopener noreferrer" },
+          "Відкрити на " + (SOURCE_NAMES[l.source] || "OLX"), icon("ext", 16, 2.5)))));
+    markActs(c, l);
     return c;
+  }
+  function markActs(c, l) {
+    const b = c.querySelectorAll(".acts .act");
+    b[0].setAttribute("aria-pressed", String(favs.has(l.key)));
+    b[0].querySelector(".lbl").textContent = favs.has(l.key) ? "В обраному" : "В обране";
+    b[1].setAttribute("aria-pressed", String(hidden.has(l.key)));
+    b[1].querySelector(".lbl").textContent = hidden.has(l.key) ? "Повернути" : "Сховати";
   }
 
   // ---------- рендер ----------
@@ -523,7 +581,7 @@ details[open] summary svg{transform:rotate(180deg)}
     const tabs = $("tabs");
     tabs.replaceChildren.apply(tabs, TABS.map(function (t) {
       return el("button", { type: "button", "aria-pressed": String(state.tab === t), onclick: function () { setTab(t); } },
-        t === "best" ? [icon("star", 15), "Найкраще"] : t,
+        t === "best" ? [icon("star", 15), "Найкраще"] : t === "fav" ? [icon("bookmark", 15), el("span", { class: "favlbl", text: "Обране" })] : t,
         el("small", { text: base.filter(function (l) { return inTab(l, t); }).length }));
     }));
     const sort = $("sort");
@@ -617,9 +675,11 @@ details[open] summary svg{transform:rotate(180deg)}
       renderPager(0);
       const filtered = hasFilters();
       list.replaceChildren(el("div", { class: "empty" },
-        el("b", { text: filtered ? "Нічого не знайдено за цими фільтрами" : state.tab === "best" ? "Поки що немає найкращих" : "Оголошень немає" }),
+        el("b", { text: filtered ? "Нічого не знайдено за цими фільтрами" : state.tab === "best" ? "Поки що немає найкращих"
+          : state.tab === "fav" ? "В обраному поки порожньо" : "Оголошень немає" }),
         el("span", { text: filtered ? "Спробуйте послабити умови."
           : state.tab === "best" ? "Жодне оголошення ще не отримало оцінку AI " + data.best_min_score + " або вище. Загляньте в M1 чи M2."
+          : state.tab === "fav" ? "Натисніть «В обране» на картці — вона з'явиться тут (зберігається на цьому пристрої)."
           : "У цьому розділі зараз порожньо." }),
         filtered && el("button", { class: "ghost", type: "button", text: "Скинути фільтри", onclick: resetFilters })));
       return;
@@ -628,6 +688,17 @@ details[open] summary svg{transform:rotate(180deg)}
     items.slice((state.page - 1) * PER, state.page * PER).forEach(function (l) { frag.append(card(l)); });
     list.replaceChildren(frag);
     renderPager(items.length);
+    renderHidebar();
+  }
+  function renderHidebar() {
+    const bar = $("hidebar");
+    const n = data.listings.filter(function (l) { return hidden.has(l.key); }).length;
+    if (!n || state.tab === "fav") { bar.replaceChildren(); return; }
+    bar.replaceChildren(state.showHidden
+      ? el("span", null, "Показую приховані (" + n + ") · ", el("button", { type: "button", text: "повернутись до всіх",
+          onclick: function () { state.showHidden = false; resetPage(); render(); } }))
+      : el("span", null, "Приховано " + n + " · ", el("button", { type: "button", text: "показати",
+          onclick: function () { state.showHidden = true; resetPage(); render(); } })));
   }
   function render() { renderControls(); renderFilters(); renderList(); }
   // Будь-яка зміна вибірки (розділ, сортування, фільтр, ціна) повертає на першу сторінку.

@@ -1,8 +1,10 @@
-"""Один прохід: OLX → фільтр → БД → Gemini."""
+"""Один прохід: OLX + Prom → фільтр → БД → Gemini."""
 
 from __future__ import annotations
 
 import asyncio
+import json
+import random
 import logging
 from dataclasses import dataclass, field
 
@@ -11,9 +13,11 @@ import httpx
 from .analyzer import PROMPT_VERSION, Analyzer, QuotaExceeded, is_fresh
 from .classify import classify, to_uah
 from .config import settings
-from .db import DB
+from .db import DB, now
 from .pricing import market_for_row
-from .sources import olx
+from .signals import ai_context
+from . import rates
+from .sources import olx, prom
 
 log = logging.getLogger(__name__)
 
@@ -30,13 +34,15 @@ class ScanReport:
     deactivated: int = 0
     analyzed: int = 0
     errors: list[str] = field(default_factory=list)
+    by_source: dict[str, int] = field(default_factory=dict)  # скільки оголошень дало кожне джерело
+    failed_sources: list[str] = field(default_factory=list)  # джерела, що впали або віддали 0
 
     def text(self) -> str:
         lines = [
-            f"Знайдено на OLX: {self.fetched}",
+            "Знайдено: " + (", ".join(f"{s} {n}" for s, n in self.by_source.items()) or "0"),
             f"Нових: {self.new}, змінили ціну: {self.price_changed}",
             f"Пройшли фільтр (Air M1/M2): {self.passed_filter}",
-            f"Зникли з OLX: {self.deactivated}",
+            f"Зникли з майданчиків: {self.deactivated}",
             f"Проаналізовано AI: {self.analyzed}",
         ]
         if self.errors:
@@ -52,12 +58,13 @@ class Scanner:
         if settings.gemini_api_key:
             self.analyzer = Analyzer(self.http)
         self._lock = asyncio.Lock()
+        self.rates = rates.fallback()
 
     @property
     def busy(self) -> bool:
         return self._lock.locked()
 
-    async def scrape(self, report: ScanReport) -> None:
+    async def _olx(self, report: ScanReport) -> tuple[dict[str, olx.Listing], bool]:
         listings: dict[str, olx.Listing] = {}
         complete = True
         for q in QUERIES:
@@ -68,17 +75,54 @@ class Scanner:
                 complete = False
                 report.errors.append(str(e) or e.__class__.__name__)
                 log.exception("OLX «%s» не вдалося", q)
+        return listings, complete
 
-        report.fetched = len(listings)
-        for item in listings.values():
-            uah = to_uah(item.price, item.currency, settings.usd_rate)
-            specs = classify(item, settings.min_price_uah, settings.max_price_uah, uah, settings.max_age_days)
-            status = self.db.upsert(item, specs, uah)
-            report.new += status == "new"
-            report.price_changed += status == "price_changed"
-            report.passed_filter += specs.reject_reason is None
-        if complete and listings:
-            report.deactivated = self.db.deactivate_missing("olx", set(listings))
+    async def _prom(self, report: ScanReport) -> tuple[dict[str, olx.Listing], bool]:
+        listings: dict[str, olx.Listing] = {}
+        try:
+            candidates = await prom.fetch_candidates(self.http)
+        except (prom.PromError, httpx.HTTPError) as e:
+            report.errors.append(f"Prom: {e}")
+            log.exception("Prom не вдалося")
+            return listings, False
+        complete = True
+        for c in candidates:
+            key = f"prom:{c['id']}"
+            row = self.db.get(key)
+            if row is not None and row["description"]:
+                # Сторінку товару вже бачили — опис і фото беремо з бази, свіжа лише ціна з пошуку.
+                details = {"description": row["description"], "photos": json.loads(row["photos"]),
+                           "condition": json.loads(row["params"] or "{}").get("condition", ""), "price": c["price"]}
+                created = row["created_at"]
+            else:
+                try:
+                    details = await prom.fetch_details(self.http, c)
+                except (prom.PromError, httpx.HTTPError) as e:
+                    # новий товар, якого ще нема в базі, — просто пропускаємо; на «зникло» це не впливає
+                    log.warning("Prom товар %s: %s", c["id"], e)
+                    continue
+                await asyncio.sleep(random.uniform(0.8, 1.6))
+                created = now()  # Prom не віддає дату — рахуємо від першої появи в нашій базі
+            listings[key] = prom.to_listing(c, details, created)
+        return listings, complete
+
+    async def scrape(self, report: ScanReport) -> None:
+        self.rates = await rates.fetch(self.http)
+        for source, fetch in (("olx", self._olx), ("prom", self._prom)):
+            listings, complete = await fetch(report)
+            report.by_source[source] = len(listings)
+            if not listings:
+                report.failed_sources.append(source)
+            for item in listings.values():
+                uah = to_uah(item.price, item.currency, self.rates["USD"], self.rates["EUR"])
+                specs = classify(item, settings.min_price_uah, settings.max_price_uah, uah, settings.max_age_days)
+                status = self.db.upsert(item, specs, uah)
+                report.new += status == "new"
+                report.price_changed += status == "price_changed"
+                report.passed_filter += specs.reject_reason is None
+            if complete and listings:
+                report.deactivated += self.db.deactivate_missing(source, set(listings))
+        report.fetched = sum(report.by_source.values())
 
     async def analyze_pending(self, report: ScanReport, limit: int | None = None) -> None:
         if not self.analyzer:
@@ -96,7 +140,8 @@ class Scanner:
                 if fresh is not None and is_fresh(fresh):
                     return
                 try:
-                    result = await self.analyzer.analyze(row, market_for_row(self.db, row))
+                    market = market_for_row(self.db, row)
+                    result = await self.analyzer.analyze(row, market, ai_context(self.db, row, market))
                 except QuotaExceeded as e:
                     if not quota_hit.is_set():
                         report.errors.append("ліміт Gemini вичерпано, решту доаналізую наступного разу")

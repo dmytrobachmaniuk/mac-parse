@@ -73,6 +73,55 @@ async def handle_updates(bot: Bot) -> int:
     return len(updates)
 
 
+BROKEN_ALERT_EVERY_H = 6
+SOURCE_LABELS = {"olx": "OLX", "prom": "Prom.ua"}
+
+
+def scan_problem(report) -> str | None:
+    """Опис поломки скану для людини (або None, якщо все гаразд)."""
+    if not report.failed_sources:
+        return None
+    names = ", ".join(SOURCE_LABELS.get(s, s) for s in report.failed_sources)
+    reason = "; ".join(report.errors[:2]) or "віддав 0 оголошень"
+    return f"Парсер: {names} не відповідає ({reason}). Дані можуть бути неактуальними"
+
+
+async def _broadcast(bot: Bot, text: str) -> None:
+    for chat_id in settings.telegram_chat_ids:
+        try:
+            await bot.send_message(chat_id, text, disable_web_page_preview=True)
+        except TelegramAPIError:
+            log.exception("Службове повідомлення → %s", chat_id)
+
+
+async def send_service_alerts(bot: Bot, db: DB, report) -> None:
+    """Одноразове «підключено», тривога про поломку скану (не частіше ніж раз на 6 год) і «знову працює»."""
+    if not db.meta_get("tg_hello_sent"):
+        await _broadcast(bot, (
+            "✅ <b>Mac Hunter підключено</b>\n"
+            f"Перевіряю MacBook Air M1/M2 на OLX і Prom.ua кожні ~{settings.scan_interval_min} хв.\n"
+            f"Сюди прийде: 🆕 нова угода з оцінкою AI {settings.notify_min_score}+, "
+            f"📉 зниження ціни на оголошенні з оцінкою {settings.best_min_score}+, ⚠️ якщо парсер зламається.\n"
+            f"Каталог: {settings.site_url or '—'}"
+        ))
+        db.meta_set("tg_hello_sent", now())
+
+    problem = scan_problem(report)
+    was_broken = db.meta_get("scan_broken_since")
+    if problem:
+        last = db.meta_get("scan_alert_at")
+        due = last is None or (time.time() - float(last)) >= BROKEN_ALERT_EVERY_H * 3600
+        if due:
+            await _broadcast(bot, f"⚠️ {problem}.\nСпробую знову за ~{settings.scan_interval_min} хв.")
+            db.meta_set("scan_alert_at", str(time.time()))
+        if not was_broken:
+            db.meta_set("scan_broken_since", now())
+    elif was_broken:
+        await _broadcast(bot, f"✅ Парсер знову працює (був зламаний з {was_broken[:16].replace('T', ' ')} UTC).")
+        db.conn.execute("DELETE FROM meta WHERE k IN ('scan_broken_since', 'scan_alert_at')")
+        db.conn.commit()
+
+
 async def run_cycle(out: Path) -> None:
     # Явно кажемо, чого бракує: у хмарі відсутній секрет інакше тихо вимикає частину функцій.
     for name, value in (("GEMINI_API_KEY", settings.gemini_api_key), ("TELEGRAM_BOT_TOKEN", settings.telegram_token),
@@ -101,12 +150,15 @@ async def run_cycle(out: Path) -> None:
         if tg and settings.telegram_chat_ids:
             for chat_id in settings.telegram_chat_ids:
                 db.add_subscriber(chat_id)
-            await botmod.notify(tg)
+            await send_service_alerts(tg, db, report)
+            sent = await botmod.notify(tg)
+            log.info("Telegram: надіслано %d карток", sent)
         # База їде в публічну гілку data — chat id туди не пишемо.
         db.conn.execute("DELETE FROM subscribers")
         db.conn.commit()
 
-        count = site.build(db, out, ai_note=botmod.ai_status())  # і «ліміт вичерпано», і «нема ключа»
+        notes = [n for n in (botmod.ai_status(), scan_problem(report)) if n]
+        count = site.build(db, out, ai_note=" · ".join(notes) or None)
         log.info("Сайт: %d оголошень → %s", count, out)
     finally:
         await scanner.close()

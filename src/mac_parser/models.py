@@ -23,6 +23,11 @@ class Listing:
     created_at: str
     refreshed_at: str
     params: dict[str, str] = field(default_factory=dict)
+    # Про продавця (OLX віддає це в оголошенні): для сигналів «новий акаунт», «перекуп».
+    seller_id: str = ""
+    seller_created: str = ""
+    seller_verified: bool = False
+    seller_last_seen: str = ""
 
     @property
     def key(self) -> str:

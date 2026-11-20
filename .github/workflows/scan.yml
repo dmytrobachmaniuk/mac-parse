@@ -57,6 +57,21 @@ jobs:
           git commit -qm "state $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data
 
+      # GitHub вимикає розклад, якщо в репозиторії 60 днів не було комітів. Раз на 45 днів —
+      # порожній коміт у main, щоб бот не замовк сам собою.
+      - name: Не дати GitHub вимкнути розклад
+        if: github.event_name == 'schedule'
+        run: |
+          last=$(git log -1 --format=%ct origin/${{ github.event.repository.default_branch }} 2>/dev/null || git log -1 --format=%ct)
+          age_days=$(( ( $(date +%s) - last ) / 86400 ))
+          echo "Останній коміт у main: $age_days дн. тому"
+          if [ "$age_days" -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -qm "chore: keepalive (розклад GitHub Actions)"
+            git push -q origin HEAD:${{ github.event.repository.default_branch }}
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

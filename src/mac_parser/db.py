@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .classify import extract_serial
 from .models import Listing, Specs
 
 SCHEMA = """
@@ -72,8 +73,25 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(listings)")}
-        if "photo_file_ids" not in cols:  # міграція: кеш Telegram file_id для всього альбому
-            self.conn.execute("ALTER TABLE listings ADD COLUMN photo_file_ids TEXT")
+        # Міграції: нові колонки додаються до наявної бази без втрати даних.
+        for col, typ in (
+            ("photo_file_ids", "TEXT"),      # кеш Telegram file_id для альбому
+            ("seller_id", "TEXT"),           # для «скільки MacBook у продавця»
+            ("seller_created", "TEXT"),      # дата реєстрації акаунта
+            ("seller_verified", "INTEGER"),
+            ("seller_last_seen", "TEXT"),
+            ("gone_at", "TEXT"),             # коли зникло з майданчика (≈ продано)
+            ("serial", "TEXT"),              # серійник зі скрінів — щоб ловити перевиставлення
+            ("notified_price", "INTEGER"),   # ціна на момент останнього пуша (для «ціна впала»)
+        ):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE listings ADD COLUMN {col} {typ}")
+                if col == "gone_at":  # старі неактивні: вважаємо, що зникли в момент останнього показу
+                    self.conn.execute("UPDATE listings SET gone_at=last_seen WHERE active=0")
+                if col == "notified_price":
+                    self.conn.execute("UPDATE listings SET notified_price=price_uah WHERE notified=1")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_seller ON listings(seller_id, active)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_serial ON listings(serial)")
         self.conn.commit()
 
     # ---- listings -------------------------------------------------------
@@ -89,6 +107,11 @@ class DB:
             )},
             "negotiable": int(listing.negotiable),
             "is_business": int(listing.is_business),
+            "seller_id": listing.seller_id or None,
+            "seller_created": listing.seller_created or None,
+            "seller_verified": int(listing.seller_verified),
+            "seller_last_seen": listing.seller_last_seen or None,
+            "gone_at": None,  # знову побачили — отже не продане
             "photos": json.dumps(listing.photos),
             "params": json.dumps(listing.params, ensure_ascii=False),
             "price_uah": price_uah,
@@ -118,7 +141,8 @@ class DB:
     def deactivate_missing(self, source: str, seen_keys: set[str]) -> int:
         rows = self.conn.execute("SELECT key FROM listings WHERE source=? AND active=1", (source,)).fetchall()
         gone = [r["key"] for r in rows if r["key"] not in seen_keys]
-        self.conn.executemany("UPDATE listings SET active=0 WHERE key=?", [(k,) for k in gone])
+        ts = now()
+        self.conn.executemany("UPDATE listings SET active=0, gone_at=? WHERE key=?", [(ts, k) for k in gone])
         self.conn.commit()
         return len(gone)
 
@@ -137,11 +161,24 @@ class DB:
         ).fetchall()
 
     def save_analysis(self, key: str, analysis: dict, price_uah: int | None) -> None:
+        serial = extract_serial(analysis.get("photo_facts"))
         self.conn.execute(
-            "UPDATE listings SET analysis=?, analyzed_price=?, analyzed_at=?, ai_score=? WHERE key=?",
-            (json.dumps(analysis, ensure_ascii=False), price_uah, now(), analysis.get("deal_score"), key),
+            "UPDATE listings SET analysis=?, analyzed_price=?, analyzed_at=?, ai_score=?, "
+            "serial=COALESCE(?, serial) WHERE key=?",
+            (json.dumps(analysis, ensure_ascii=False), price_uah, now(), analysis.get("deal_score"), serial, key),
         )
         self.conn.commit()
+
+    def backfill_serials(self) -> int:
+        """Серійники для вже проаналізованих оголошень (одноразово після оновлення)."""
+        n = 0
+        for r in self.conn.execute("SELECT key, analysis FROM listings WHERE analysis IS NOT NULL AND serial IS NULL").fetchall():
+            s = extract_serial(json.loads(r["analysis"]).get("photo_facts"))
+            if s:
+                self.conn.execute("UPDATE listings SET serial=? WHERE key=?", (s, r["key"]))
+                n += 1
+        self.conn.commit()
+        return n
 
     def visible(self, chip: str | None, sort: str) -> list[sqlite3.Row]:
         """Активні оголошення, що пройшли фільтр і AI не визнав «не ноутбук»."""
@@ -180,12 +217,23 @@ class DB:
             (min_score,),
         ).fetchall()
 
+    def price_drops(self, min_score: int, min_drop: float = 0.03) -> list[sqlite3.Row]:
+        """Уже показані оголошення, що подешевшали на min_drop+ і після переоцінки AI досі ≥ min_score.
+        Чекаємо свіжого аналізу (analyzed_price = поточна ціна), щоб пуш був із новою оцінкою."""
+        return self.conn.execute(
+            "SELECT * FROM listings WHERE active=1 AND notified=1 AND notified_price IS NOT NULL "
+            "AND price_uah IS NOT NULL AND price_uah <= notified_price * (1 - ?) "
+            "AND analyzed_price = price_uah AND ai_score >= ? AND reject_reason IS NULL "
+            "AND json_extract(analysis,'$.is_relevant') != 0 ORDER BY ai_score DESC",
+            (min_drop, min_score),
+        ).fetchall()
+
     def mark_notified(self, keys: list[str]) -> None:
-        self.conn.executemany("UPDATE listings SET notified=1 WHERE key=?", [(k,) for k in keys])
+        self.conn.executemany("UPDATE listings SET notified=1, notified_price=price_uah WHERE key=?", [(k,) for k in keys])
         self.conn.commit()
 
     def mark_all_notified(self) -> None:
-        self.conn.execute("UPDATE listings SET notified=1")
+        self.conn.execute("UPDATE listings SET notified=1, notified_price=price_uah")
         self.conn.commit()
 
     def set_photo_file_ids(self, key: str, file_ids: list[str]) -> None:

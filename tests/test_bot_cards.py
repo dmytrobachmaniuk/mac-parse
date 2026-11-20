@@ -34,7 +34,7 @@ class SlowAnalyzer:
     def available_models(self):
         return [] if self.exhausted else ["m"]
 
-    async def analyze(self, row, market):
+    async def analyze(self, row, market, extra=""):
         await asyncio.sleep(0.2)
         return {**AI.model_dump(), "prompt_version": botmod.is_fresh.__globals__["PROMPT_VERSION"]}
 

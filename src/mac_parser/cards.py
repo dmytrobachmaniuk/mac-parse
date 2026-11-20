@@ -19,6 +19,8 @@ def escape(text: str) -> str:
     return _html_escape(str(text), quote=False)
 from .pricing import Market, effective_specs
 
+SOURCE_NAMES = {"olx": "OLX", "prom": "Prom.ua"}
+
 TEXT_LIMIT = 4096
 
 
@@ -56,7 +58,9 @@ def _bullets(title: str, items: list[str], limit: int = 5) -> list[str]:
     return ["", f"<b>{title}</b>", *(f"• {escape(i)}" for i in items[:limit])]
 
 
-def card_text(row: sqlite3.Row, market: Market, header: str = "") -> str:
+def card_text(row: sqlite3.Row, market: Market, header: str = "", extra: dict | None = None) -> str:
+    """extra: {"seller_flags": [...], "seller_notes": [...], "sold": str|None, "repost": str|None} з signals."""
+    extra = extra or {}
     a = json.loads(row["analysis"]) if row["analysis"] else {}
     chip, ram, ssd, screen = effective_specs(row)
     screen_txt = f'{a["screen_inch"]:g}"' if a.get("screen_inch") else f'{screen}"'
@@ -86,6 +90,10 @@ def card_text(row: sqlite3.Row, market: Market, header: str = "") -> str:
     history = json.loads(row["price_history"] or "[]")
     if len(history) > 1 and history[0][1] and history[0][1] != row["price_uah"]:
         lines.append(f"📉 початкова ціна {fmt_uah(history[0][1])}")
+    if extra.get("sold"):
+        lines.append(f"💸 {escape(extra['sold'])}")
+    if extra.get("repost"):
+        lines.append(f"🔁 {escape(extra['repost'])}")
 
     bat_pct = a.get("battery_health_pct") or row["battery_pct"]
     cycles = a.get("battery_cycles") or row["battery_cycles"]
@@ -113,7 +121,8 @@ def card_text(row: sqlite3.Row, market: Market, header: str = "") -> str:
         "",
         "<b>Оголошення</b>",
         f"• Продавець: {seller}" + (f" «{escape(row['seller_name'])}»" if row["seller_name"] else ""),
-        f"• Місто: {escape(row['city'] or '?')}",
+        *([f"• Про продавця: {escape(' · '.join(extra['seller_notes']))}"] if extra.get("seller_notes") else []),
+        f"• Джерело: {SOURCE_NAMES.get(row['source'], row['source'])}" + (f", {escape(row['city'])}" if row["city"] else ""),
         f"• Створено: {fmt_date(row['created_at'])}",
         f"• Оновлено: {fmt_date(row['refreshed_at'])}",
     ]
@@ -122,11 +131,12 @@ def card_text(row: sqlite3.Row, market: Market, header: str = "") -> str:
         lines += _bullets("📸 Видно на фото", a.get("photo_facts", []), 6)
         lines += _bullets("Дефекти на фото", a.get("visual_defects", []))
         lines += _bullets("✅ Плюси", a.get("pros", []))
-        lines += _bullets("⚠️ Ризики", a.get("red_flags", []))
+        lines += _bullets("⚠️ Ризики", [*a.get("red_flags", []), *extra.get("seller_flags", [])])
         if a.get("summary"):
             lines += ["", "🤖 <b>Висновок AI</b>", f"<i>{escape(a['summary'])}</i>"]
         lines += _bullets("❓ Спитати продавця", a.get("questions_to_seller", []), 3)
     else:
+        lines += _bullets("⚠️ Ризики", extra.get("seller_flags", []))
         lines += ["", f"<i>{escape(row['title'])}</i>"]
 
     text = "\n".join(lines)

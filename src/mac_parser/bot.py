@@ -31,11 +31,12 @@ from aiogram.types import (
     TelegramObject,
 )
 
-from .analyzer import QuotaExceeded, is_fresh
+from .analyzer import SOURCE_NAMES, QuotaExceeded, is_fresh
 from .cards import card_text, fmt_storage, fmt_uah
 from .config import settings
 from .db import DB, now
 from .pricing import effective_specs, market_for_row
+from .signals import ai_context, card_extra
 from .scanner import Scanner, ScanReport
 
 log = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def card_kb(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> 
             b(text=f"{idx + 1} / {total}", callback_data="noop"),
             b(text="▶", callback_data=f"v:{section}:{sort}:{next_i}"),
         ],
-        [b(text="🔗 Відкрити оригінал на OLX", url=row["url"])],
+        [b(text=f"🔗 Відкрити на {SOURCE_NAMES.get(row['source'], row['source'])}", url=row["url"])],
         [b(text=f"Сорт: {SORTS[sort]}", callback_data=f"v:{section}:{SORT_CYCLE[sort]}:0")],
         [
             b(text="🔁 Переаналізувати", callback_data=f"re:{row['ext_id']}:{section}:{sort}:{idx}"),
@@ -120,10 +121,10 @@ def card_kb(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> 
 
 def notify_kb(row: sqlite3.Row) -> InlineKeyboardMarkup:
     b = InlineKeyboardButton
-    rows = [[b(text="🔗 Відкрити оригінал на OLX", url=row["url"])]]
+    rows = [[b(text=f"🔗 Відкрити на {SOURCE_NAMES.get(row['source'], row['source'])}", url=row["url"])]]
     if settings.site_url:
         # Режим GitHub Actions: постійного бота нема, тож «меню» — це сайт-каталог.
-        rows.append([b(text="🏆 Весь каталог з оцінками AI", url=f"{settings.site_url}/?tab=best")])
+        rows.append([b(text="📋 Ця картка в каталозі", url=f"{settings.site_url}/#{row['key']}")])
     else:
         rows.append([b(text="⬅ Меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -171,7 +172,8 @@ def start_analysis(row: sqlite3.Row, force: bool = False) -> asyncio.Task | None
 
 async def _analyze(row: sqlite3.Row) -> bool:
     try:
-        result = await scanner.analyzer.analyze(row, market_for_row(db, row))
+        market = market_for_row(db, row)
+        result = await scanner.analyzer.analyze(row, market, ai_context(db, row, market))
         db.save_analysis(row["key"], result, row["price_uah"])
         return True
     except QuotaExceeded:
@@ -358,7 +360,8 @@ def _card(row: sqlite3.Row, section: str, sort: str, idx: int, total: int) -> tu
             header = f"⏸ <i>{status}. Показую дані з оголошення.</i>"
         elif row["key"] in _analyzing:
             header = "⏳ <i>Gemini аналізує фото й опис, картка оновиться сама (~20–60 с)</i>"
-    return card_text(row, market_for_row(db, row), header=header or ""), card_kb(row, section, sort, idx, total)
+    market = market_for_row(db, row)
+    return card_text(row, market, header=header or "", extra=card_extra(db, row, market)), card_kb(row, section, sort, idx, total)
 
 
 async def _refresh_card(bot: Bot, message: Message, key: str, section: str, sort: str, idx: int,
@@ -459,20 +462,27 @@ def stats_text() -> str:
     return "\n".join(lines)
 
 
-async def notify(bot: Bot) -> None:
-    rows = db.to_notify(settings.notify_min_score)
-    if not rows:
-        return
+async def notify(bot: Bot) -> int:
+    """Пуші: нові вигідні угоди та зниження ціни на вже хороших. Повертає кількість надісланих карток."""
+    new_rows = db.to_notify(settings.notify_min_score)
+    drops = db.price_drops(settings.best_min_score)
     subs = db.subscribers()
-    for row in rows:
-        text = card_text(row, market_for_row(db, row), header="🚨 <b>Нова вигідна пропозиція</b>")
+    sent = 0
+    for row, header in (
+        *((r, "🆕 <b>Нова вигідна пропозиція</b>") for r in new_rows),
+        *((r, f"📉 <b>Ціна впала</b>: {fmt_uah(r['notified_price'])} → {fmt_uah(r['price_uah'])}") for r in drops),
+    ):
+        market = market_for_row(db, row)
+        text = card_text(row, market, header=header, extra=card_extra(db, row, market))
         for chat_id in subs:
             try:
                 await send_listing(bot, chat_id, row, text, notify_kb(row))
+                sent += 1
             except Exception:  # noqa: BLE001
                 log.exception("Сповіщення %s → %s", row["key"], chat_id)
         await asyncio.sleep(0.5)
-    db.mark_notified([r["key"] for r in rows])
+    db.mark_notified([r["key"] for r in (*new_rows, *drops)])
+    return sent
 
 
 async def scan_and_notify(bot: Bot) -> ScanReport:

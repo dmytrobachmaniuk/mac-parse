@@ -14,6 +14,7 @@ from .classify import age_days
 from .config import settings
 from .db import DB
 from .pricing import effective_specs, market_for_row
+from .signals import repost_info, seller_info, sold_for_row
 
 TEMPLATE = Path(__file__).with_name("site_template.html")
 
@@ -25,8 +26,12 @@ def listing_json(db: DB, row) -> dict:
     delta = market.delta_pct(row["price_uah"])
     history = json.loads(row["price_history"] or "[]")
     first_price = history[0][1] if history and history[0][1] != row["price_uah"] else None
+    seller = seller_info(db, row, delta)
+    sold = sold_for_row(db, row)
+    repost = repost_info(db, row)
     return {
         "key": row["key"],
+        "source": row["source"],
         "url": row["url"],
         "title": row["title"],
         "chip": chip,
@@ -49,6 +54,15 @@ def listing_json(db: DB, row) -> dict:
         "refreshed": row["refreshed_at"],
         "first_seen": row["first_seen"],
         "photos": json.loads(row["photos"])[:10],
+        "seller_info": {
+            "account_days": seller.account_days,
+            "active_ads": seller.active_ads,
+            "verified": seller.verified,
+            "flags": seller.flags,
+            "notes": seller.notes,
+        },
+        "sold": {"median": sold.median, "count": sold.count, "days": sold.days_to_sell} if sold.count >= 3 else None,
+        "repost": {"since": repost.since, "first_price": repost.first_price, "by": repost.by} if repost else None,
         "battery_pct": a.get("battery_health_pct") or row["battery_pct"],
         "battery_cycles": a.get("battery_cycles") or row["battery_cycles"],
         "battery_source": a.get("battery_source"),
