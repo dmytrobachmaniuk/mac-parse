@@ -74,6 +74,12 @@ async def handle_updates(bot: Bot) -> int:
 
 
 async def run_cycle(out: Path) -> None:
+    # Явно кажемо, чого бракує: у хмарі відсутній секрет інакше тихо вимикає частину функцій.
+    for name, value in (("GEMINI_API_KEY", settings.gemini_api_key), ("TELEGRAM_BOT_TOKEN", settings.telegram_token),
+                        ("TELEGRAM_CHAT_IDS", settings.telegram_chat_ids)):
+        if not value:
+            log.warning("Секрет %s не задано — %s вимкнено", name,
+                        "AI-аналіз" if name == "GEMINI_API_KEY" else "Telegram-пуші")
     db = DB(settings.db_path)
     scanner = Scanner(db)
     _load_exhausted(db, scanner)
@@ -100,7 +106,7 @@ async def run_cycle(out: Path) -> None:
         db.conn.execute("DELETE FROM subscribers")
         db.conn.commit()
 
-        count = site.build(db, out, ai_note=botmod.ai_status() if scanner.analyzer else None)
+        count = site.build(db, out, ai_note=botmod.ai_status())  # і «ліміт вичерпано», і «нема ключа»
         log.info("Сайт: %d оголошень → %s", count, out)
     finally:
         await scanner.close()

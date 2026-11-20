@@ -151,7 +151,7 @@ def menu_text() -> str:
 def ai_status() -> str | None:
     """None, якщо Gemini зараз доступний; інакше — пояснення для картки."""
     if scanner.analyzer is None:
-        return "AI вимкнено: у .env немає GEMINI_API_KEY"
+        return "AI вимкнено: не задано GEMINI_API_KEY (секрет GitHub або .env)"
     if not scanner.analyzer.available_models():
         until = min(scanner.analyzer.exhausted.values())
         return f"Ліміт AI на сьогодні вичерпано, оцінка з'явиться після ~{datetime.fromtimestamp(until):%H:%M}"
