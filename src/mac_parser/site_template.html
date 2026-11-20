@@ -10,7 +10,10 @@
 <meta name="theme-color" content="#3B82F6">
 <script>
   // Тема до першої відмальовки, щоб не блимало: "light" | "dark" | нічого (= як у системі).
-  try { var t = localStorage.getItem("mh:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  var t = null;
+  try { t = localStorage.getItem("mh:theme"); } catch (e) {}
+  if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,7 +40,7 @@
   --bad:#E5534B;--bad-ink:#1C2128;--bad-bg:#442D30;--bad-tx:#FF938A;
   --focus:#539BF5;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+@media (prefers-color-scheme:dark){:root:not([data-theme]){
   color-scheme:dark;
   --bg:#22272E;--card:#2D333B;--ink:#CDD9E5;--ink2:#ADBAC7;--muted:#909DAB;--line:#373E47;--chip:#373E47;--edge:#545D68;
   --inv:#316DCA;--inv-ink:#FFFFFF;--ph:#373E47;
@@ -75,22 +78,51 @@ h1 em{font-style:normal;background:linear-gradient(90deg,#3B82F6,#7C5CFF);-webki
 
 /* панель керування */
 .bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin:-8px 0}
-.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:var(--line);border-radius:14px;padding:4px}
-.tabs button{min-height:44px;border:0;border-radius:10px;background:transparent;color:var(--ink2);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
-.tabs button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:800}
+/* вкладки: не обрізаються, на вузькому екрані гортаються */
+.tabs{display:flex;gap:4px;background:var(--line);border-radius:14px;padding:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:1 0 auto;min-height:44px;border:0;border-radius:10px;background:transparent;color:var(--ink2);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;white-space:nowrap}
+.tabs button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:800;box-shadow:0 1px 3px rgb(0 0 0 / .18)}
 .tabs small{font-size:12px;font-weight:700;color:var(--muted)}
+
+/* блок керування: джерело, сортування, фільтри */
+.controls{display:flex;flex-direction:column;gap:10px}
 .row2{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.sort{display:flex;gap:2px}
-.sort button{min-height:44px;border:0;background:none;padding:0 8px;font-size:13px;font-weight:700;color:var(--muted)}
-.sort button:first-child{padding-left:0}
-.sort button[aria-pressed=true]{color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:6px}
-.ghost{min-height:36px;border:1px solid var(--edge);border-radius:10px;background:transparent;font-size:13px;font-weight:700;padding:0 10px;display:flex;align-items:center;gap:6px}
-.ghost[aria-pressed=true]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
-.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.f{min-height:36px;border:1px solid var(--edge);border-radius:999px;background:transparent;padding:0 12px;font-size:13px;font-weight:600}
-.f[aria-pressed=true]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv);font-weight:700}
-.price{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
-.price input{width:92px;min-height:36px;border:1px solid var(--edge);border-radius:999px;background:transparent;padding:0 12px;color:var(--ink)}
+.seg{display:inline-flex;gap:2px;background:var(--line);border-radius:12px;padding:3px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:0 0 auto;min-height:36px;border:0;border-radius:9px;background:transparent;color:var(--ink2);font-size:13px;font-weight:700;padding:0 12px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.seg button[aria-pressed=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .18)}
+.seg small{font-size:11px;font-weight:700;color:var(--muted)}
+.srcbar{display:flex}
+.srcbar button{flex:1 0 auto;justify-content:center}
+.acts2{display:flex;gap:6px}
+
+/* кнопки: одна система для всього сайту */
+.btn,.ghost{min-height:40px;border:1px solid var(--edge);border-radius:12px;background:var(--card);color:var(--ink);font-size:13px;font-weight:700;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:border-color .15s,background .15s}
+.btn:hover,.ghost:hover{border-color:var(--ink2)}
+.btn[aria-pressed=true],.btn[aria-expanded=true]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+.btn.icon{width:40px;padding:0}
+.btn.primary{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+.badge{min-width:20px;height:20px;border-radius:10px;background:var(--focus);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
+.btn[aria-expanded=true] .badge{background:var(--inv-ink);color:var(--inv)}
+
+/* панель фільтрів */
+.fpanel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:14px}
+.fgroup h4{margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.fchips{display:flex;flex-wrap:wrap;gap:6px}
+.fchip{min-height:36px;border:1px solid var(--edge);border-radius:999px;background:transparent;color:var(--ink);padding:0 13px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:background .15s,border-color .15s}
+.fchip:hover{border-color:var(--ink2)}
+.fchip[aria-pressed=true]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv);font-weight:700}
+.range{display:flex;gap:8px;align-items:center}
+.field{position:relative;flex:1;min-width:0}
+.field input{width:100%;min-height:42px;border:1px solid var(--edge);border-radius:12px;background:var(--bg);color:var(--ink);font:600 14px/1 inherit;padding:0 44px 0 12px;-moz-appearance:textfield;appearance:textfield}
+.field input::-webkit-outer-spin-button,.field input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.field input:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 25%,transparent)}
+.field input::placeholder{color:var(--muted)}
+.field span{position:absolute;right:12px;top:50%;translate:0 -50%;font-size:12px;font-weight:700;color:var(--muted);pointer-events:none}
+.dash{color:var(--muted);font-weight:700}
+.ffoot{display:flex;gap:8px;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}
+.ffoot .btn{flex:1}
 
 /* список */
 .list{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);align-items:start}
@@ -113,7 +145,9 @@ h1 em{font-style:normal;background:linear-gradient(90deg,#3B82F6,#7C5CFF);-webki
 .act:first-child[aria-pressed=true]{color:var(--focus);border-color:var(--focus)}
 .favmark{color:var(--focus);display:inline-flex}
 .hidebar{text-align:center;font-size:13px;font-weight:600;color:var(--muted)}
-.hidebar button{border:0;background:none;color:var(--focus);font-weight:700;min-height:44px;padding:0 6px}
+.hidebar{display:flex;justify-content:center}
+.hidebar button{min-height:36px;border:1px solid var(--edge);border-radius:999px;background:var(--card);color:var(--ink2);font-size:12px;font-weight:700;padding:0 14px;display:inline-flex;align-items:center;gap:6px}
+.hidebar button:hover{border-color:var(--ink2);color:var(--ink)}
 @media (max-width:420px){.tabs .favlbl{display:none}}
 .cnt{right:12px;bottom:12px;background:#15181B;color:#fff}
 .nav{position:absolute;top:calc(50% - 22px);width:44px;height:44px;border:0;border-radius:22px;background:var(--card);color:var(--ink);display:flex;align-items:center;justify-content:center}
@@ -223,7 +257,7 @@ details[open] summary svg{transform:rotate(180deg)}
       </svg>
       <div><h1>Mac <em>Hunter</em></h1></div>
     </div>
-    <div class="tagline">MacBook Air M1 / M2 на OLX · оцінка угод від AI</div>
+    <div class="tagline">MacBook Air M1 / M2 · OLX, Prom, Telegram · оцінка угод від AI</div>
     <div class="prog" id="prog" role="progressbar" aria-label="Перевірено AI" aria-valuemin="0"><i></i></div>
     <div class="status"><span id="upd">завантаження…</span><span class="sub" id="ana"></span></div>
     <div class="note" id="note" role="status" hidden></div>
@@ -231,11 +265,17 @@ details[open] summary svg{transform:rotate(180deg)}
   <div class="bar">
     <nav class="tabs" id="tabs" aria-label="Розділи"></nav>
   </div>
-  <div class="row2">
-    <div class="sort" id="sort" role="group" aria-label="Сортування"></div>
-    <button class="ghost" id="view" type="button" aria-pressed="false"></button>
+  <div class="controls">
+    <div class="seg srcbar" id="src" role="group" aria-label="Джерело"></div>
+    <div class="row2">
+      <div class="seg sort" id="sort" role="group" aria-label="Сортування"></div>
+      <div class="acts2">
+        <button class="btn" id="fbtn" type="button" aria-expanded="false" aria-controls="fpanel"></button>
+        <button class="btn icon" id="view" type="button" aria-pressed="false"></button>
+      </div>
+    </div>
+    <div class="fpanel" id="fpanel" role="group" aria-label="Фільтри" hidden></div>
   </div>
-  <div class="filters" id="filters" role="group" aria-label="Фільтри"></div>
   <div id="explain"></div>
   <main class="list" id="list" aria-live="polite"></main>
   <nav class="pager" id="pager" aria-label="Сторінки"></nav>
@@ -253,6 +293,7 @@ details[open] summary svg{transform:rotate(180deg)}
     left: "m15 5-7 7 7 7",
     right: "m9 5 7 7-7 7",
     down: "m6 9 6 6 6-6",
+    sliders: "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4",
     bookmark: "M6 3h12v18l-6-4-6 4z",
     eyeoff: "M3 3l18 18M10.6 6.1A9.900 9.900 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3 3.600M6.600 6.600C4.200 8.200 3 12 3 12s4 6 9 6a9 9 0 0 0 4.400-1.100M9.900 9.900a3 3 0 0 0 4.200 4.200",
     repeat: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
@@ -357,13 +398,28 @@ details[open] summary svg{transform:rotate(180deg)}
   const sellerFlags = function (l) { return arr(l.seller_info && l.seller_info.flags); };
   const allRisks = function (l) { return arr(l.ai && l.ai.red_flags).concat(sellerFlags(l)); };
   const SORTS = [["quality", "ціна/якість"], ["cheap", "дешевші"], ["new", "нові"]];
+  // Перемикачі (вмикаєш — звужує вибірку). Групи — лише для відображення в панелі.
   const FILTERS = [
-    ["ram16", "16 ГБ RAM", function (l) { return num(l.ram) >= 16; }],
-    ["ssd512", "512 ГБ+", function (l) { return num(l.ssd) >= 512; }],
-    ["priv", "лише приватні", function (l) { return !l.business; }],
-    ["batt85", "батарея ≥ 85%", function (l) { return num(l.battery_pct) >= 85; }],
-    ["clean", "без ризиків", function (l) { return !!l.ai && allRisks(l).length === 0; }]
+    ["batt85", "батарея ≥ 85%", "state", function (l) { return num(l.battery_pct) >= 85; }],
+    ["battphoto", "батарея видна на фото", "state", function (l) { return l.battery_source === "фото"; }],
+    ["cyc300", "≤ 300 циклів", "state", function (l) { return num(l.battery_cycles) != null && l.battery_cycles <= 300; }],
+    ["cond8", "стан 8+/10", "state", function (l) { return !!l.ai && num(l.ai.condition_score) >= 8; }],
+    ["below", "нижче ринку", "price", function (l) { return num(l.delta) != null && l.delta < 0; }],
+    ["nego", "є торг", "price", function (l) { return !!l.negotiable; }],
+    ["priv", "лише приватні", "seller", function (l) { return !l.business; }],
+    ["clean", "без ризиків", "seller", function (l) { return !!l.ai && allRisks(l).length === 0; }],
+    ["fresh", "свіжі ≤ 7 днів", "seller", function (l) { return num(l.created_days) != null && l.created_days <= 7; }],
+    ["norepost", "без перевиставлень", "seller", function (l) { return !l.repost; }]
   ];
+  // Конфігурація — мультивибір усередині групи (8 АБО 16), між групами — І.
+  const CHOICES = {
+    ram: [["8", "8 ГБ", function (l) { return l.ram === 8; }], ["16", "16 ГБ", function (l) { return l.ram === 16; }],
+          ["24", "24 ГБ", function (l) { return num(l.ram) >= 24; }]],
+    ssd: [["256", "256 ГБ", function (l) { return l.ssd === 256; }], ["512", "512 ГБ", function (l) { return l.ssd === 512; }],
+          ["1024", "1 ТБ+", function (l) { return num(l.ssd) >= 1024; }]],
+    scr: [["13", '13"', function (l) { return !/^15/.test(l.screen || ""); }], ["15", '15"', function (l) { return /^15/.test(l.screen || ""); }]]
+  };
+  const SOURCES = [["all", "Усі"], ["olx", "OLX"], ["prom", "Prom"], ["tg", "Telegram"]];
   const store = {
     get: function (k) { try { return localStorage.getItem("mh:" + k); } catch (e) { return null; } },
     set: function (k, v) { try { localStorage.setItem("mh:" + k, v); } catch (e) {} }
@@ -373,7 +429,9 @@ details[open] summary svg{transform:rotate(180deg)}
     tab: TABS.indexOf(qTab) >= 0 ? qTab : "best",
     sort: SORTS.some(function (s) { return s[0] === store.get("sort"); }) ? store.get("sort") : "quality",
     compact: store.get("compact") === "1",
-    on: {}, min: null, max: null,
+    on: {}, min: null, max: null, ram: new Set(), ssd: new Set(), scr: new Set(), panel: false,
+    src: SOURCES.some(function (x) { return x[0] === new URLSearchParams(location.search).get("src"); })
+      ? new URLSearchParams(location.search).get("src") : "all",
     page: Math.max(1, parseInt(new URLSearchParams(location.search).get("page"), 10) || 1)
   };
   const PER = 20;  // ноутбуків на сторінку
@@ -388,9 +446,13 @@ details[open] summary svg{transform:rotate(180deg)}
   }
   state.showHidden = false;
 
-  function passes(l) {
+  function passes(l, ignoreSrc) {
     if (state.tab !== "fav" && hidden.has(l.key) !== state.showHidden) return false;
-    for (const f of FILTERS) if (state.on[f[0]] && !f[2](l)) return false;
+    if (!ignoreSrc && state.src !== "all" && (l.source || "olx") !== state.src) return false;
+    for (const f of FILTERS) if (state.on[f[0]] && !f[3](l)) return false;
+    for (const g in CHOICES) {
+      if (state[g].size && !CHOICES[g].some(function (c) { return state[g].has(c[0]) && c[2](l); })) return false;
+    }
     if (state.min != null && l.price < state.min) return false;
     if (state.max != null && l.price > state.max) return false;
     return true;
@@ -411,7 +473,11 @@ details[open] summary svg{transform:rotate(180deg)}
     cheap: function (a, b) { return a.price - b.price; },
     new: function (a, b) { return (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0); }
   };
-  const hasFilters = function () { return state.min != null || state.max != null || FILTERS.some(function (f) { return state.on[f[0]]; }); };
+  function activeCount() {
+    return FILTERS.filter(function (f) { return state.on[f[0]]; }).length + state.ram.size + state.ssd.size + state.scr.size +
+      (state.min != null || state.max != null ? 1 : 0);
+  }
+  const hasFilters = function () { return activeCount() > 0 || state.src !== "all"; };
 
   // ---------- картка ----------
   function gallery(l) {
@@ -587,33 +653,69 @@ details[open] summary svg{transform:rotate(180deg)}
         t === "best" ? [icon("star", 15), "Найкраще"] : t === "fav" ? [icon("bookmark", 15), el("span", { class: "favlbl", text: "Обране" })] : t,
         el("small", { text: base.filter(function (l) { return inTab(l, t); }).length }));
     }));
+    const srcBase = data.listings.filter(function (l) { return passes(l, true) && inTab(l, state.tab); });
+    const src = $("src");
+    src.replaceChildren.apply(src, SOURCES.map(function (x) {
+      const n = x[0] === "all" ? srcBase.length : srcBase.filter(function (l) { return (l.source || "olx") === x[0]; }).length;
+      return el("button", { type: "button", "aria-pressed": String(state.src === x[0]),
+        onclick: function () { state.src = x[0]; resetPage(); render(); } }, x[1], el("small", { text: n }));
+    }));
     const sort = $("sort");
     sort.replaceChildren.apply(sort, SORTS.map(function (s) {
       return el("button", { type: "button", "aria-pressed": String(state.sort === s[0]), text: s[1],
         onclick: function () { state.sort = s[0]; store.set("sort", s[0]); resetPage(); render(); } });
     }));
+    const fb = $("fbtn"), n = activeCount();
+    fb.setAttribute("aria-expanded", String(state.panel));
+    fb.replaceChildren.apply(fb, [icon("sliders", 16, 2.2), "Фільтри", n ? el("span", { class: "badge", text: n }) : null].filter(Boolean));
     const v = $("view");
     v.setAttribute("aria-pressed", String(state.compact));
-    v.replaceChildren(icon("rows"), "Компактно");
+    v.setAttribute("aria-label", state.compact ? "Великі картки" : "Компактний список");
+    v.title = state.compact ? "Великі картки" : "Компактний список";
+    v.replaceChildren(icon("rows", 18));
     $("app").classList.toggle("compact", state.compact);
   }
   function renderFilters() {
+    const panel = $("fpanel");
+    panel.hidden = !state.panel;
+    if (!state.panel) { panel.replaceChildren(); return; }
+    const refresh = function () { resetPage(); renderControls(); renderFilters(); renderList(); };
+    const toggle = function (f) {
+      return el("button", { class: "fchip", type: "button", "aria-pressed": String(!!state.on[f[0]]), text: f[1],
+        onclick: function () { state.on[f[0]] = !state.on[f[0]]; refresh(); } });
+    };
+    const choice = function (g, c) {
+      return el("button", { class: "fchip", type: "button", "aria-pressed": String(state[g].has(c[0])), text: c[1],
+        onclick: function () { if (state[g].has(c[0])) state[g].delete(c[0]); else state[g].add(c[0]); refresh(); } });
+    };
     const priceInput = function (key, label) {
       const i = el("input", { type: "number", inputmode: "numeric", min: "0", step: "500", "aria-label": "Ціна " + label + ", грн",
         placeholder: label, value: state[key] != null ? state[key] : null });
       i.addEventListener("input", function () {
         const n = parseInt(i.value, 10);
         state[key] = isFinite(n) && n > 0 ? n : null;
-        resetPage(); renderControls(); renderList();
+        resetPage(); renderControls(); renderList();  // панель не перемальовуємо — інакше поле втратить фокус
       });
-      return i;
+      return el("label", { class: "field" }, i, el("span", { text: "грн" }));
     };
-    const f = $("filters");
-    f.replaceChildren.apply(f, FILTERS.map(function (x) {
-      return el("button", { class: "f", type: "button", "aria-pressed": String(!!state.on[x[0]]), text: x[1],
-        onclick: function () { state.on[x[0]] = !state.on[x[0]]; resetPage(); render(); } });
-    }).concat([el("span", { class: "price" }, "ціна", priceInput("min", "від"), priceInput("max", "до"))]));
+    const group = function (title, kids) { return el("div", { class: "fgroup" }, el("h4", { text: title }), el("div", { class: "fchips" }, kids)); };
+    const by = function (g) { return FILTERS.filter(function (f) { return f[2] === g; }).map(toggle); };
+    const shown = visibleItems().length;
+    panel.replaceChildren(
+      group("Пам'ять", CHOICES.ram.map(function (c) { return choice("ram", c); })),
+      group("Накопичувач", CHOICES.ssd.map(function (c) { return choice("ssd", c); })),
+      group("Діагональ", CHOICES.scr.map(function (c) { return choice("scr", c); })),
+      el("div", { class: "fgroup" }, el("h4", { text: "Ціна" }),
+        el("div", { class: "range" }, priceInput("min", "від"), el("span", { class: "dash", text: "—" }), priceInput("max", "до"))),
+      group("Ціна відносно ринку", by("price")),
+      group("Стан і батарея", by("state")),
+      group("Продавець і оголошення", by("seller")),
+      el("div", { class: "ffoot" },
+        el("button", { class: "btn", type: "button", text: "Скинути", disabled: !activeCount(), onclick: resetFilters }),
+        el("button", { class: "btn primary", type: "button", text: "Показати " + shown,
+          onclick: function () { state.panel = false; render(); $("list").scrollIntoView({ block: "start" }); } })));
   }
+  $("fbtn").addEventListener("click", function () { state.panel = !state.panel; renderControls(); renderFilters(); });
   function visibleItems() {
     return data.listings.filter(function (l) { return passes(l) && inTab(l, state.tab); }).sort(cmp[state.sort]);
   }
@@ -621,6 +723,7 @@ details[open] summary svg{transform:rotate(180deg)}
     try {
       const u = new URL(location.href);
       u.searchParams.set("tab", state.tab);
+      if (state.src !== "all") u.searchParams.set("src", state.src); else u.searchParams.delete("src");
       if (state.page > 1) u.searchParams.set("page", state.page); else u.searchParams.delete("page");
       history.replaceState(null, "", u);
     } catch (e) {}
@@ -706,7 +809,10 @@ details[open] summary svg{transform:rotate(180deg)}
   function render() { renderControls(); renderFilters(); renderList(); }
   // Будь-яка зміна вибірки (розділ, сортування, фільтр, ціна) повертає на першу сторінку.
   function resetPage() { state.page = 1; syncUrl(); }
-  function resetFilters() { state.on = {}; state.min = state.max = null; resetPage(); render(); }
+  function resetFilters() {
+    state.on = {}; state.min = state.max = null; state.ram.clear(); state.ssd.clear(); state.scr.clear(); state.src = "all";
+    resetPage(); render();
+  }
   function setTab(t) {
     state.tab = t;
     resetPage();
@@ -719,7 +825,7 @@ details[open] summary svg{transform:rotate(180deg)}
     const l = data.listings.find(function (x) { return x.key === id; });
     if (!l) return;
     if (!document.getElementById(id)) {
-      state.on = {}; state.min = state.max = null;
+      state.on = {}; state.min = state.max = null; state.ram.clear(); state.ssd.clear(); state.scr.clear(); state.src = "all";
       if (!inTab(l, state.tab)) state.tab = l.chip;
       // картка може бути на іншій сторінці — відкриваємо саме ту
       const idx = visibleItems().findIndex(function (x) { return x.key === id; });
@@ -752,21 +858,18 @@ details[open] summary svg{transform:rotate(180deg)}
   }
 
   // ---------- тема ----------
-  const THEMES = [["auto", "як у системі", "auto"], ["light", "світла", "sun"], ["dark", "темна", "moon"]];
+  // Дві теми: світла і темна. Кнопка показує ту, на яку перемкне.
   function renderTheme() {
-    const cur = store.get("theme") || "auto";
-    const t = THEMES.find(function (x) { return x[0] === cur; }) || THEMES[0];
+    const dark = document.documentElement.dataset.theme === "dark";
     const b = $("theme");
-    b.replaceChildren(icon(t[2], 20, 2));
-    b.setAttribute("aria-label", "Тема: " + t[1] + ". Натисніть, щоб змінити");
-    b.title = "Тема: " + t[1];
+    b.replaceChildren(icon(dark ? "sun" : "moon", 20, 2));
+    b.setAttribute("aria-label", dark ? "Увімкнути світлу тему" : "Увімкнути темну тему");
+    b.title = dark ? "Світла тема" : "Темна тема";
   }
   $("theme").addEventListener("click", function () {
-    const cur = store.get("theme") || "auto";
-    const next = THEMES[(THEMES.findIndex(function (x) { return x[0] === cur; }) + 1) % THEMES.length][0];
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
     store.set("theme", next);
-    if (next === "auto") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = next;
     renderTheme();
   });
   renderTheme();
