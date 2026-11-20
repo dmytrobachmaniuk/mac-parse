@@ -65,7 +65,8 @@ def listing_json(db: DB, row) -> dict:
 def build(db: DB, out: Path, ai_note: str | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     rows = db.visible(None, "new")
-    stats = db.stats()
+    # Лічильники — по тих самих картках, що на сайті (без відсіяних AI як «не той ноутбук»).
+    stats = {"passed": len(rows), "analyzed_passed": sum(1 for r in rows if r["analysis"])}
     payload = {
         "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "best_min_score": settings.best_min_score,
